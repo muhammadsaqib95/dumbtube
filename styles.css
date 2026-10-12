@@ -40,6 +40,22 @@ html.dumb-youtube ytd-compact-autoplay-renderer {
   display: none !important;
 }
 
+html.hide-sidebar ytd-app {
+  --ytd-app-guide-width: 0px !important;
+  --ytd-mini-guide-width: 0px !important;
+}
+
+html.hide-sidebar ytd-mini-guide-renderer,
+html.hide-sidebar ytd-guide-renderer,
+html.hide-sidebar tp-yt-app-drawer#guide,
+html.hide-sidebar #guide-button {
+  display: none !important;
+}
+
+html.hide-sidebar ytd-page-manager {
+  margin-left: 0 !important;
+}
+
 html.hide-comments ytd-comments,
 html.hide-comments #comments,
 html.hide-comments ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-comments-section"] {

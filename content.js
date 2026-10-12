@@ -187,6 +187,13 @@ function applyHideComments(enabled) {
   document.documentElement.classList.toggle("hide-comments", hideCommentsOn);
 }
 
+let hideSidebarOn = false;
+
+function applyHideSidebar(enabled) {
+  hideSidebarOn = Boolean(enabled);
+  document.documentElement.classList.toggle("hide-sidebar", hideSidebarOn);
+}
+
 let openSearchOn = false;
 let focusedSearchUrl = "";
 
@@ -223,6 +230,7 @@ function hideAll() {
   applyHideSponsored(hideSponsoredOn);
   hidePlayables();
   applyHideComments(hideCommentsOn);
+  applyHideSidebar(hideSidebarOn);
   focusSearch();
   syncDumbPlaceholder();
 }
@@ -250,7 +258,7 @@ function syncDumbPlaceholder() {
   }
 }
 
-chrome.storage.local.get({ dumbYoutube: false, hideSuggestions: false, hidePlayables: true, hideComments: false, hideShorts: true, hideSponsored: true, openSearch: false }).then((data) => {
+chrome.storage.local.get({ dumbYoutube: false, hideSuggestions: false, hidePlayables: true, hideComments: false, hideShorts: true, hideSponsored: true, openSearch: false, hideSidebar: false }).then((data) => {
   applyDumbYoutube(data.dumbYoutube || data.hideSuggestions);
   hidePlayablesOn = data.hidePlayables !== false;
   hidePlayables();
@@ -258,6 +266,7 @@ chrome.storage.local.get({ dumbYoutube: false, hideSuggestions: false, hidePlaya
   applyHideShorts(data.hideShorts);
   applyHideSponsored(data.hideSponsored);
   applyOpenSearch(data.openSearch);
+  applyHideSidebar(data.hideSidebar);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -282,6 +291,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (changes.openSearch) {
     applyOpenSearch(changes.openSearch.newValue);
+  }
+  if (changes.hideSidebar) {
+    applyHideSidebar(changes.hideSidebar.newValue);
   }
 });
 
