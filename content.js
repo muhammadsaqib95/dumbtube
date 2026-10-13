@@ -225,6 +225,58 @@ function applyOpenSearch(enabled) {
   focusSearch();
 }
 
+let focusTimerOn = false;
+let focusEndsAt = 0;
+let focusTimerId = 0;
+
+function clearFocusNote() {
+  document.getElementById("focus-timer-note")?.remove();
+}
+
+function showFocusNote() {
+  if (document.getElementById("focus-timer-note")) return;
+  const note = document.createElement("p");
+  note.id = "focus-timer-note";
+  note.textContent = "Focus time is up. Playback is paused.";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Keep watching";
+  button.addEventListener("click", () => {
+    chrome.storage.local.set({ focusTimer: false, focusEndsAt: 0 });
+  });
+  note.appendChild(button);
+  document.documentElement.appendChild(note);
+}
+
+function pauseForFocus() {
+  if (!focusTimerOn || !focusEndsAt || Date.now() < focusEndsAt) return;
+  document.querySelectorAll("video").forEach((video) => {
+    if (!video.paused) video.pause();
+  });
+  showFocusNote();
+}
+
+function scheduleFocusTimer() {
+  clearTimeout(focusTimerId);
+  if (!focusTimerOn || !focusEndsAt) {
+    clearFocusNote();
+    return;
+  }
+  const wait = focusEndsAt - Date.now();
+  if (wait <= 0) {
+    pauseForFocus();
+    return;
+  }
+  clearFocusNote();
+  focusTimerId = setTimeout(pauseForFocus, wait);
+}
+
+function applyFocusTimer(enabled, endsAt) {
+  focusTimerOn = Boolean(enabled);
+  focusEndsAt = focusTimerOn ? Number(endsAt) || 0 : 0;
+  scheduleFocusTimer();
+}
+
 function hideAll() {
   applyHideShorts(hideShortsOn);
   applyHideSponsored(hideSponsoredOn);
@@ -232,6 +284,7 @@ function hideAll() {
   applyHideComments(hideCommentsOn);
   applyHideSidebar(hideSidebarOn);
   focusSearch();
+  pauseForFocus();
   syncDumbPlaceholder();
 }
 
@@ -258,7 +311,7 @@ function syncDumbPlaceholder() {
   }
 }
 
-chrome.storage.local.get({ dumbYoutube: false, hideSuggestions: false, hidePlayables: true, hideComments: false, hideShorts: true, hideSponsored: true, openSearch: false, hideSidebar: false }).then((data) => {
+chrome.storage.local.get({ dumbYoutube: false, hideSuggestions: false, hidePlayables: true, hideComments: false, hideShorts: true, hideSponsored: true, openSearch: false, hideSidebar: false, focusTimer: false, focusEndsAt: 0 }).then((data) => {
   applyDumbYoutube(data.dumbYoutube || data.hideSuggestions);
   hidePlayablesOn = data.hidePlayables !== false;
   hidePlayables();
@@ -267,6 +320,7 @@ chrome.storage.local.get({ dumbYoutube: false, hideSuggestions: false, hidePlaya
   applyHideSponsored(data.hideSponsored);
   applyOpenSearch(data.openSearch);
   applyHideSidebar(data.hideSidebar);
+  applyFocusTimer(data.focusTimer, data.focusEndsAt);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -295,7 +349,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.hideSidebar) {
     applyHideSidebar(changes.hideSidebar.newValue);
   }
+  if (changes.focusTimer || changes.focusEndsAt) {
+    chrome.storage.local.get({ focusTimer: false, focusEndsAt: 0 }).then((data) => {
+      applyFocusTimer(data.focusTimer, data.focusEndsAt);
+    });
+  }
 });
+
+document.addEventListener("play", (event) => {
+  if (event.target instanceof HTMLVideoElement) pauseForFocus();
+}, true);
 
 hideAll();
 let scheduled = false;
