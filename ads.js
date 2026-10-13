@@ -13,7 +13,19 @@ const AD_SELECTOR = [
   "iframe[src*='googleadservices.com/pagead']",
 ].join(",");
 
+let hideGoogleAdsOn = true;
+document.documentElement.classList.add("hide-google-ads");
+
 function hideGoogleAds() {
+  const marked = [...document.querySelectorAll("[data-hidden-google-ad]")];
+  if (!hideGoogleAdsOn) {
+    marked.forEach((el) => {
+      el.style.removeProperty("display");
+      delete el.dataset.hiddenGoogleAd;
+    });
+    return;
+  }
+
   const matches = [...document.querySelectorAll(AD_SELECTOR)];
   const roots = matches.filter(
     (el) => !matches.some((other) => other !== el && other.contains(el))
@@ -21,13 +33,13 @@ function hideGoogleAds() {
 
   let newlySkipped = 0;
   for (const el of roots) {
-    el.style.setProperty("display", "none", "important");
     if (el.dataset.skippedAd) continue;
     el.dataset.skippedAd = "1";
     newlySkipped += 1;
   }
 
   for (const el of matches) {
+    el.dataset.hiddenGoogleAd = "1";
     el.style.setProperty("display", "none", "important");
   }
 
@@ -36,7 +48,21 @@ function hideGoogleAds() {
   }
 }
 
-hideGoogleAds();
+function applyHideGoogleAds(enabled) {
+  hideGoogleAdsOn = enabled !== false;
+  document.documentElement.classList.toggle("hide-google-ads", hideGoogleAdsOn);
+  hideGoogleAds();
+}
+
+chrome.storage.local.get({ hideGoogleAds: true }).then((data) => {
+  applyHideGoogleAds(data.hideGoogleAds);
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.hideGoogleAds) {
+    applyHideGoogleAds(changes.hideGoogleAds.newValue);
+  }
+});
 
 let scheduled = false;
 const observer = new MutationObserver(() => {

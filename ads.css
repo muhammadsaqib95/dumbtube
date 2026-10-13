@@ -1,14 +1,14 @@
 /* Google AdSense, GPT, and related display slots */
-ins.adsbygoogle,
-.google-auto-placed,
-iframe[id^="google_ads_iframe"],
-iframe[id^="aswift_"],
-iframe[name^="google_ads_iframe"],
-div[id^="google_ads_iframe"],
-div[id^="google_ads_"],
-div[id^="div-gpt-ad"],
-iframe[src*="googlesyndication.com"],
-iframe[src*="doubleclick.net/pagead"],
-iframe[src*="googleadservices.com/pagead"] {
+html.hide-google-ads ins.adsbygoogle,
+html.hide-google-ads .google-auto-placed,
+html.hide-google-ads iframe[id^="google_ads_iframe"],
+html.hide-google-ads iframe[id^="aswift_"],
+html.hide-google-ads iframe[name^="google_ads_iframe"],
+html.hide-google-ads div[id^="google_ads_iframe"],
+html.hide-google-ads div[id^="google_ads_"],
+html.hide-google-ads div[id^="div-gpt-ad"],
+html.hide-google-ads iframe[src*="googlesyndication.com"],
+html.hide-google-ads iframe[src*="doubleclick.net/pagead"],
+html.hide-google-ads iframe[src*="googleadservices.com/pagead"] {
   display: none !important;
 }

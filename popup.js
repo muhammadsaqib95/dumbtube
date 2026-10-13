@@ -9,6 +9,7 @@ const SIDEBAR_KEY = "hideSidebar";
 const FOCUS_KEY = "focusTimer";
 const FOCUS_MINUTES_KEY = "focusMinutes";
 const FOCUS_ENDS_KEY = "focusEndsAt";
+const GOOGLE_ADS_KEY = "hideGoogleAds";
 const countEl = document.getElementById("count");
 const dumbToggle = document.getElementById("dumb-youtube");
 const playablesToggle = document.getElementById("hide-playables");
@@ -19,6 +20,7 @@ const openSearchToggle = document.getElementById("open-search");
 const sidebarToggle = document.getElementById("hide-sidebar");
 const focusToggle = document.getElementById("focus-timer");
 const focusMinutesInput = document.getElementById("focus-minutes");
+const googleAdsToggle = document.getElementById("hide-google-ads");
 
 function focusMinutes() {
   const minutes = Math.round(Number(focusMinutesInput.value));
@@ -52,6 +54,7 @@ chrome.storage.local.get({
   [SIDEBAR_KEY]: false,
   [FOCUS_KEY]: false,
   [FOCUS_MINUTES_KEY]: 25,
+  [GOOGLE_ADS_KEY]: true,
 }).then((data) => {
   render(data[STORAGE_KEY]);
   dumbToggle.checked = Boolean(data[DUMB_KEY] || data.hideSuggestions);
@@ -63,6 +66,7 @@ chrome.storage.local.get({
   sidebarToggle.checked = Boolean(data[SIDEBAR_KEY]);
   focusToggle.checked = Boolean(data[FOCUS_KEY]);
   focusMinutesInput.value = String(data[FOCUS_MINUTES_KEY] || 25);
+  googleAdsToggle.checked = data[GOOGLE_ADS_KEY] !== false;
 });
 
 dumbToggle.addEventListener("change", () => {
@@ -99,6 +103,10 @@ focusToggle.addEventListener("change", () => {
 
 focusMinutesInput.addEventListener("change", () => {
   saveFocusTimer(focusToggle.checked);
+});
+
+googleAdsToggle.addEventListener("change", () => {
+  chrome.storage.local.set({ [GOOGLE_ADS_KEY]: googleAdsToggle.checked });
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
