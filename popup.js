@@ -10,6 +10,9 @@ const FOCUS_KEY = "focusTimer";
 const FOCUS_MINUTES_KEY = "focusMinutes";
 const FOCUS_ENDS_KEY = "focusEndsAt";
 const GOOGLE_ADS_KEY = "hideGoogleAds";
+const PAUSE_KEY = "pauseHiding";
+const PAUSE_ENDS_KEY = "pauseEndsAt";
+const PAUSE_MS = 10 * 60 * 1000;
 const countEl = document.getElementById("count");
 const dumbToggle = document.getElementById("dumb-youtube");
 const playablesToggle = document.getElementById("hide-playables");
@@ -21,6 +24,43 @@ const sidebarToggle = document.getElementById("hide-sidebar");
 const focusToggle = document.getElementById("focus-timer");
 const focusMinutesInput = document.getElementById("focus-minutes");
 const googleAdsToggle = document.getElementById("hide-google-ads");
+const pauseToggle = document.getElementById("pause-hiding");
+const pauseCopy = pauseToggle.closest(".row").querySelector("small");
+let pauseTick = 0;
+
+function pauseRemaining(endsAt) {
+  return Math.max(0, Number(endsAt) - Date.now());
+}
+
+function formatRemaining(ms) {
+  const total = Math.ceil(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function renderPause(endsAt) {
+  clearInterval(pauseTick);
+  const remaining = pauseRemaining(endsAt);
+  const active = remaining > 0;
+  pauseToggle.checked = active;
+  if (!active) {
+    pauseCopy.textContent = "Show everything again for 10 minutes";
+    if (Number(endsAt) > 0) chrome.storage.local.set({ [PAUSE_KEY]: false, [PAUSE_ENDS_KEY]: 0 });
+    return;
+  }
+  const paint = () => {
+    const left = pauseRemaining(endsAt);
+    if (left <= 0) {
+      chrome.storage.local.set({ [PAUSE_KEY]: false, [PAUSE_ENDS_KEY]: 0 });
+      renderPause(0);
+      return;
+    }
+    pauseCopy.textContent = `Showing everything · ${formatRemaining(left)} left`;
+  };
+  paint();
+  pauseTick = setInterval(paint, 1000);
+}
 
 function focusMinutes() {
   const minutes = Math.round(Number(focusMinutesInput.value));
@@ -55,6 +95,7 @@ chrome.storage.local.get({
   [FOCUS_KEY]: false,
   [FOCUS_MINUTES_KEY]: 25,
   [GOOGLE_ADS_KEY]: true,
+  [PAUSE_ENDS_KEY]: 0,
 }).then((data) => {
   render(data[STORAGE_KEY]);
   dumbToggle.checked = Boolean(data[DUMB_KEY] || data.hideSuggestions);
@@ -67,6 +108,7 @@ chrome.storage.local.get({
   focusToggle.checked = Boolean(data[FOCUS_KEY]);
   focusMinutesInput.value = String(data[FOCUS_MINUTES_KEY] || 25);
   googleAdsToggle.checked = data[GOOGLE_ADS_KEY] !== false;
+  renderPause(data[PAUSE_ENDS_KEY]);
 });
 
 dumbToggle.addEventListener("change", () => {
@@ -109,9 +151,20 @@ googleAdsToggle.addEventListener("change", () => {
   chrome.storage.local.set({ [GOOGLE_ADS_KEY]: googleAdsToggle.checked });
 });
 
+pauseToggle.addEventListener("change", () => {
+  const endsAt = pauseToggle.checked ? Date.now() + PAUSE_MS : 0;
+  chrome.storage.local.set({
+    [PAUSE_KEY]: pauseToggle.checked,
+    [PAUSE_ENDS_KEY]: endsAt,
+  });
+  renderPause(endsAt);
+});
+
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes[STORAGE_KEY]) {
-    render(changes[STORAGE_KEY].newValue);
+  if (area !== "local") return;
+  if (changes[STORAGE_KEY]) render(changes[STORAGE_KEY].newValue);
+  if (changes[PAUSE_ENDS_KEY] && !pauseToggle.matches(":active")) {
+    renderPause(changes[PAUSE_ENDS_KEY].newValue);
   }
 });
 

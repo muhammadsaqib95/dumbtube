@@ -61,10 +61,19 @@ function collectSponsoredCards(root, cards) {
 }
 
 let hideSponsoredOn = true;
+let pauseEndsAt = 0;
+
+function hidingPaused() {
+  if (!pauseEndsAt) return false;
+  if (Date.now() < pauseEndsAt) return true;
+  pauseEndsAt = 0;
+  chrome.storage.local.set({ pauseHiding: false, pauseEndsAt: 0 });
+  return false;
+}
 
 function hideYouTubeAds() {
   const marked = [...document.querySelectorAll("[data-hidden-sponsored]")];
-  if (!hideSponsoredOn) {
+  if (!hideSponsoredOn || hidingPaused()) {
     marked.forEach((el) => {
       el.style.removeProperty("display");
       delete el.dataset.hiddenSponsored;
@@ -95,7 +104,7 @@ function hideYouTubeAds() {
 
 function applyHideSponsored(enabled) {
   hideSponsoredOn = enabled !== false;
-  document.documentElement.classList.toggle("hide-sponsored", hideSponsoredOn);
+  document.documentElement.classList.toggle("hide-sponsored", hideSponsoredOn && !hidingPaused());
   hideYouTubeAds();
 }
 
@@ -108,7 +117,7 @@ function markHiddenShort(el) {
 
 function hideShorts() {
   const marked = [...document.querySelectorAll("[data-hidden-short]")];
-  if (!hideShortsOn) {
+  if (!hideShortsOn || hidingPaused()) {
     marked.forEach((el) => {
       el.style.removeProperty("display");
       delete el.dataset.hiddenShort;
@@ -132,7 +141,7 @@ function hideShorts() {
 
 function applyHideShorts(enabled) {
   hideShortsOn = enabled !== false;
-  document.documentElement.classList.toggle("hide-shorts", hideShortsOn);
+  document.documentElement.classList.toggle("hide-shorts", hideShortsOn && !hidingPaused());
   hideShorts();
 }
 
@@ -150,7 +159,7 @@ function playableShelf(el) {
 
 function hidePlayables() {
   const marked = [...document.querySelectorAll("[data-hidden-playable]")];
-  if (!hidePlayablesOn) {
+  if (!hidePlayablesOn || hidingPaused()) {
     marked.forEach((el) => {
       el.style.removeProperty("display");
       delete el.dataset.hiddenPlayable;
@@ -184,14 +193,14 @@ function hidePlayables() {
 
 function applyHideComments(enabled) {
   hideCommentsOn = Boolean(enabled);
-  document.documentElement.classList.toggle("hide-comments", hideCommentsOn);
+  document.documentElement.classList.toggle("hide-comments", hideCommentsOn && !hidingPaused());
 }
 
 let hideSidebarOn = false;
 
 function applyHideSidebar(enabled) {
   hideSidebarOn = Boolean(enabled);
-  document.documentElement.classList.toggle("hide-sidebar", hideSidebarOn);
+  document.documentElement.classList.toggle("hide-sidebar", hideSidebarOn && !hidingPaused());
 }
 
 let openSearchOn = false;
@@ -283,23 +292,34 @@ function hideAll() {
   hidePlayables();
   applyHideComments(hideCommentsOn);
   applyHideSidebar(hideSidebarOn);
+  applyDumbYoutube(dumbYoutube);
   focusSearch();
   pauseForFocus();
   syncDumbPlaceholder();
+}
+
+let pauseTimer = 0;
+
+function applyPause(endsAt) {
+  pauseEndsAt = Number(endsAt) || 0;
+  clearTimeout(pauseTimer);
+  const wait = pauseEndsAt - Date.now();
+  if (wait > 0) pauseTimer = setTimeout(hideAll, wait);
+  hideAll();
 }
 
 let dumbYoutube = false;
 
 function applyDumbYoutube(enabled) {
   dumbYoutube = Boolean(enabled);
-  document.documentElement.classList.toggle("dumb-youtube", dumbYoutube);
+  document.documentElement.classList.toggle("dumb-youtube", dumbYoutube && !hidingPaused());
   syncDumbPlaceholder();
 }
 
 function syncDumbPlaceholder() {
   const onHome = location.pathname === "/" || location.pathname.startsWith("/feed/subscriptions");
   let note = document.getElementById("dumb-yt-note");
-  if (!dumbYoutube || !onHome) {
+  if (!dumbYoutube || hidingPaused() || !onHome) {
     note?.remove();
     return;
   }
@@ -311,16 +331,15 @@ function syncDumbPlaceholder() {
   }
 }
 
-chrome.storage.local.get({ dumbYoutube: false, hideSuggestions: false, hidePlayables: true, hideComments: false, hideShorts: true, hideSponsored: true, openSearch: false, hideSidebar: false, focusTimer: false, focusEndsAt: 0 }).then((data) => {
-  applyDumbYoutube(data.dumbYoutube || data.hideSuggestions);
+chrome.storage.local.get({ dumbYoutube: false, hideSuggestions: false, hidePlayables: true, hideComments: false, hideShorts: true, hideSponsored: true, openSearch: false, hideSidebar: false, focusTimer: false, focusEndsAt: 0, pauseEndsAt: 0 }).then((data) => {
+  dumbYoutube = Boolean(data.dumbYoutube || data.hideSuggestions);
   hidePlayablesOn = data.hidePlayables !== false;
-  hidePlayables();
-  applyHideComments(data.hideComments);
-  applyHideShorts(data.hideShorts);
-  applyHideSponsored(data.hideSponsored);
+  hideCommentsOn = Boolean(data.hideComments);
+  hideShortsOn = data.hideShorts !== false;
+  hideSponsoredOn = data.hideSponsored !== false;
   applyOpenSearch(data.openSearch);
-  applyHideSidebar(data.hideSidebar);
   applyFocusTimer(data.focusTimer, data.focusEndsAt);
+  applyPause(data.pauseEndsAt);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -349,6 +368,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.hideSidebar) {
     applyHideSidebar(changes.hideSidebar.newValue);
   }
+  if (changes.pauseEndsAt) applyPause(changes.pauseEndsAt.newValue);
   if (changes.focusTimer || changes.focusEndsAt) {
     chrome.storage.local.get({ focusTimer: false, focusEndsAt: 0 }).then((data) => {
       applyFocusTimer(data.focusTimer, data.focusEndsAt);

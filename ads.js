@@ -14,11 +14,20 @@ const AD_SELECTOR = [
 ].join(",");
 
 let hideGoogleAdsOn = true;
+let pauseEndsAt = 0;
 document.documentElement.classList.add("hide-google-ads");
+
+function hidingPaused() {
+  if (!pauseEndsAt) return false;
+  if (Date.now() < pauseEndsAt) return true;
+  pauseEndsAt = 0;
+  chrome.storage.local.set({ pauseHiding: false, pauseEndsAt: 0 });
+  return false;
+}
 
 function hideGoogleAds() {
   const marked = [...document.querySelectorAll("[data-hidden-google-ad]")];
-  if (!hideGoogleAdsOn) {
+  if (!hideGoogleAdsOn || hidingPaused()) {
     marked.forEach((el) => {
       el.style.removeProperty("display");
       delete el.dataset.hiddenGoogleAd;
@@ -48,20 +57,32 @@ function hideGoogleAds() {
   }
 }
 
+let pauseTimer = 0;
+
 function applyHideGoogleAds(enabled) {
   hideGoogleAdsOn = enabled !== false;
-  document.documentElement.classList.toggle("hide-google-ads", hideGoogleAdsOn);
+  document.documentElement.classList.toggle("hide-google-ads", hideGoogleAdsOn && !hidingPaused());
   hideGoogleAds();
 }
 
-chrome.storage.local.get({ hideGoogleAds: true }).then((data) => {
-  applyHideGoogleAds(data.hideGoogleAds);
+function applyPause(endsAt) {
+  pauseEndsAt = Number(endsAt) || 0;
+  clearTimeout(pauseTimer);
+  const wait = pauseEndsAt - Date.now();
+  if (wait > 0) pauseTimer = setTimeout(() => applyHideGoogleAds(hideGoogleAdsOn), wait);
+  applyHideGoogleAds(hideGoogleAdsOn);
+}
+
+chrome.storage.local.get({ hideGoogleAds: true, pauseEndsAt: 0 }).then((data) => {
+  hideGoogleAdsOn = data.hideGoogleAds !== false;
+  applyPause(data.pauseEndsAt);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.hideGoogleAds) {
-    applyHideGoogleAds(changes.hideGoogleAds.newValue);
-  }
+  if (area !== "local") return;
+  if (changes.hideGoogleAds) hideGoogleAdsOn = changes.hideGoogleAds.newValue !== false;
+  if (changes.pauseEndsAt) applyPause(changes.pauseEndsAt.newValue);
+  else if (changes.hideGoogleAds) applyHideGoogleAds(hideGoogleAdsOn);
 });
 
 let scheduled = false;
