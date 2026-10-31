@@ -17,15 +17,37 @@ let hideGoogleAdsOn = true;
 let pauseEndsAt = 0;
 document.documentElement.classList.add("hide-google-ads");
 
+// After the extension is reloaded or updated, scripts already running in open
+// tabs lose access to chrome.* APIs. Stop quietly instead of throwing errors.
+let observer = null;
+let extensionGone = false;
+
+function extensionAlive() {
+  if (extensionGone) return false;
+  if (globalThis.chrome?.runtime?.id) return true;
+  extensionGone = true;
+  observer?.disconnect();
+  return false;
+}
+
+function sendSkipped(count) {
+  if (extensionAlive()) chrome.runtime.sendMessage({ type: "ads-skipped", count }).catch(() => {});
+}
+
+function saveSettings(values) {
+  if (extensionAlive()) chrome.storage.local.set(values).catch(() => {});
+}
+
 function hidingPaused() {
   if (!pauseEndsAt) return false;
   if (Date.now() < pauseEndsAt) return true;
   pauseEndsAt = 0;
-  chrome.storage.local.set({ pauseHiding: false, pauseEndsAt: 0 });
+  saveSettings({ pauseHiding: false, pauseEndsAt: 0 });
   return false;
 }
 
 function hideGoogleAds() {
+  if (!extensionAlive()) return;
   const marked = [...document.querySelectorAll("[data-hidden-google-ad]")];
   if (!hideGoogleAdsOn || hidingPaused()) {
     marked.forEach((el) => {
@@ -53,7 +75,7 @@ function hideGoogleAds() {
   }
 
   if (newlySkipped > 0) {
-    chrome.runtime.sendMessage({ type: "ads-skipped", count: newlySkipped }).catch(() => {});
+    sendSkipped(newlySkipped);
   }
 }
 
@@ -86,7 +108,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 let scheduled = false;
-const observer = new MutationObserver(() => {
+observer = new MutationObserver(() => {
   if (scheduled) return;
   scheduled = true;
   requestAnimationFrame(() => {

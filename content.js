@@ -67,11 +67,33 @@ function collectSponsoredCards(root, cards) {
 let hideSponsoredOn = true;
 let pauseEndsAt = 0;
 
+// After the extension is reloaded or updated, scripts already running in open
+// tabs lose access to chrome.* APIs. Stop quietly instead of throwing errors.
+let observer = null;
+let extensionGone = false;
+
+function extensionAlive() {
+  if (extensionGone) return false;
+  if (globalThis.chrome?.runtime?.id) return true;
+  extensionGone = true;
+  observer?.disconnect();
+  clearInterval(playerTimer);
+  return false;
+}
+
+function sendSkipped(count) {
+  if (extensionAlive()) chrome.runtime.sendMessage({ type: "ads-skipped", count }).catch(() => {});
+}
+
+function saveSettings(values) {
+  if (extensionAlive()) chrome.storage.local.set(values).catch(() => {});
+}
+
 function hidingPaused() {
   if (!pauseEndsAt) return false;
   if (Date.now() < pauseEndsAt) return true;
   pauseEndsAt = 0;
-  chrome.storage.local.set({ pauseHiding: false, pauseEndsAt: 0 });
+  saveSettings({ pauseHiding: false, pauseEndsAt: 0 });
   return false;
 }
 
@@ -102,7 +124,7 @@ function hideYouTubeAds() {
   }
 
   if (newlySkipped > 0) {
-    chrome.runtime.sendMessage({ type: "ads-skipped", count: newlySkipped }).catch(() => {});
+    sendSkipped(newlySkipped);
   }
 }
 
@@ -255,7 +277,7 @@ function showFocusNote() {
   button.type = "button";
   button.textContent = "Keep watching";
   button.addEventListener("click", () => {
-    chrome.storage.local.set({ focusTimer: false, focusEndsAt: 0 });
+    saveSettings({ focusTimer: false, focusEndsAt: 0 });
   });
   note.appendChild(button);
   document.documentElement.appendChild(note);
@@ -319,7 +341,7 @@ function skipVideoAd() {
     if (video.currentSrc && countedAdSrc.get(video) !== video.currentSrc) {
       countedAdSrc.set(video, video.currentSrc);
       adSeekAt.delete(video);
-      chrome.runtime.sendMessage({ type: "ads-skipped", count: 1 }).catch(() => {});
+      sendSkipped(1);
     }
     if (!video.muted) {
       video.muted = true;
@@ -354,6 +376,7 @@ function blockAutoplay() {
 }
 
 function playerTick() {
+  if (!extensionAlive()) return;
   skipVideoAd();
   blockAutoplay();
 }
@@ -380,6 +403,7 @@ function applyBlockAutoplay(enabled) {
 }
 
 function hideAll() {
+  if (!extensionAlive()) return;
   applyHideShorts(hideShortsOn);
   applyHideSponsored(hideSponsoredOn);
   hidePlayables();
@@ -487,7 +511,7 @@ document.addEventListener("play", (event) => {
 
 hideAll();
 let scheduled = false;
-const observer = new MutationObserver(() => {
+observer = new MutationObserver(() => {
   if (scheduled) return;
   scheduled = true;
   setTimeout(() => {
