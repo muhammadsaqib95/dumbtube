@@ -12,6 +12,8 @@ const FOCUS_ENDS_KEY = "focusEndsAt";
 const GOOGLE_ADS_KEY = "hideGoogleAds";
 const PAUSE_KEY = "pauseHiding";
 const PAUSE_ENDS_KEY = "pauseEndsAt";
+const SKIP_VIDEO_ADS_KEY = "skipVideoAds";
+const AUTOPLAY_KEY = "blockAutoplay";
 const PAUSE_MS = 10 * 60 * 1000;
 const countEl = document.getElementById("count");
 const dumbToggle = document.getElementById("dumb-youtube");
@@ -24,6 +26,8 @@ const sidebarToggle = document.getElementById("hide-sidebar");
 const focusToggle = document.getElementById("focus-timer");
 const focusMinutesInput = document.getElementById("focus-minutes");
 const googleAdsToggle = document.getElementById("hide-google-ads");
+const skipVideoAdsToggle = document.getElementById("skip-video-ads");
+const autoplayToggle = document.getElementById("block-autoplay");
 const pauseToggle = document.getElementById("pause-hiding");
 const pauseCopy = pauseToggle.closest(".row").querySelector("small");
 let pauseTick = 0;
@@ -96,6 +100,8 @@ chrome.storage.local.get({
   [FOCUS_MINUTES_KEY]: 25,
   [GOOGLE_ADS_KEY]: true,
   [PAUSE_ENDS_KEY]: 0,
+  [SKIP_VIDEO_ADS_KEY]: false,
+  [AUTOPLAY_KEY]: false,
 }).then((data) => {
   render(data[STORAGE_KEY]);
   dumbToggle.checked = Boolean(data[DUMB_KEY] || data.hideSuggestions);
@@ -108,6 +114,8 @@ chrome.storage.local.get({
   focusToggle.checked = Boolean(data[FOCUS_KEY]);
   focusMinutesInput.value = String(data[FOCUS_MINUTES_KEY] || 25);
   googleAdsToggle.checked = data[GOOGLE_ADS_KEY] !== false;
+  skipVideoAdsToggle.checked = Boolean(data[SKIP_VIDEO_ADS_KEY]);
+  autoplayToggle.checked = Boolean(data[AUTOPLAY_KEY]);
   renderPause(data[PAUSE_ENDS_KEY]);
 });
 
@@ -149,6 +157,14 @@ focusMinutesInput.addEventListener("change", () => {
 
 googleAdsToggle.addEventListener("change", () => {
   chrome.storage.local.set({ [GOOGLE_ADS_KEY]: googleAdsToggle.checked });
+});
+
+skipVideoAdsToggle.addEventListener("change", () => {
+  chrome.storage.local.set({ [SKIP_VIDEO_ADS_KEY]: skipVideoAdsToggle.checked });
+});
+
+autoplayToggle.addEventListener("change", () => {
+  chrome.storage.local.set({ [AUTOPLAY_KEY]: autoplayToggle.checked });
 });
 
 pauseToggle.addEventListener("change", () => {

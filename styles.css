@@ -23,7 +23,11 @@ html.hide-sponsored ytd-search-pyv-renderer,
 html.hide-sponsored ytd-companion-slot-renderer,
 html.hide-sponsored ytd-action-companion-ad-renderer,
 html.hide-sponsored ytd-compact-promoted-video-renderer,
-html.hide-sponsored ytd-rich-item-renderer:has(ytd-ad-slot-renderer) {
+html.hide-sponsored ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
+/* Any result carrying YouTube's ad badge, whatever wrapper it comes in */
+html.hide-sponsored ytd-item-section-renderer > #contents > :has(ad-badge-view-model, feed-ad-metadata-view-model),
+html.hide-sponsored ytd-rich-item-renderer:has(ad-badge-view-model, feed-ad-metadata-view-model),
+html.hide-sponsored ytd-watch-next-secondary-results-renderer #items > :has(ad-badge-view-model, feed-ad-metadata-view-model) {
   display: none !important;
 }
 
@@ -100,4 +104,14 @@ html.dumb-youtube #dumb-yt-note {
   color: #f1f1f1;
   font: 16px system-ui, sans-serif;
   pointer-events: none;
+}
+/* Banner and text ads over the video, and the ad itself while it is skipped */
+html.skip-video-ads .ytp-ad-overlay-container,
+html.skip-video-ads .ytp-ad-image-overlay,
+html.skip-video-ads .ytp-ad-text-overlay {
+  display: none !important;
+}
+
+html.skip-video-ads .html5-video-player.ad-showing video {
+  visibility: hidden !important;
 }

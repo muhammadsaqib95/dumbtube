@@ -34,6 +34,10 @@ function closestCard(el) {
   let current = el;
   while (current) {
     if (current.matches?.(CARD_SELECTOR)) return current;
+    // Unknown wrapper: stop at the single search result that holds the label.
+    if (current.parentElement?.id === "contents" && current.parentElement.parentElement?.matches("ytd-item-section-renderer")) {
+      return current;
+    }
     const root = current.getRootNode?.();
     current = root?.host || current.parentElement;
   }
@@ -286,6 +290,95 @@ function applyFocusTimer(enabled, endsAt) {
   scheduleFocusTimer();
 }
 
+let skipVideoAdsOn = false;
+let blockAutoplayOn = false;
+let playerTimer = 0;
+const mutedForAd = new WeakSet();
+const countedAdSrc = new WeakMap();
+const adSeekAt = new WeakMap();
+let lastAutonavClick = 0;
+
+// YouTube ignores scripted clicks on its Skip button, so ads are skipped by
+// jumping to their end. Every player on the page is checked: YouTube keeps
+// hidden preview players around, and the ad may be in any of them.
+function skipVideoAd() {
+  for (const player of document.querySelectorAll(".html5-video-player")) {
+    const video = player.querySelector("video");
+    if (!video) continue;
+
+    if (!player.classList.contains("ad-showing")) {
+      // Ad is over: give the sound back if we were the ones who muted it.
+      if (mutedForAd.has(video)) video.muted = false;
+      mutedForAd.delete(video);
+      countedAdSrc.delete(video);
+      adSeekAt.delete(video);
+      continue;
+    }
+    if (!skipVideoAdsOn || hidingPaused()) continue;
+
+    if (video.currentSrc && countedAdSrc.get(video) !== video.currentSrc) {
+      countedAdSrc.set(video, video.currentSrc);
+      adSeekAt.delete(video);
+      chrome.runtime.sendMessage({ type: "ads-skipped", count: 1 }).catch(() => {});
+    }
+    if (!video.muted) {
+      video.muted = true;
+      mutedForAd.add(video);
+    }
+
+    // Jumping before the ad has loaded stalls for seconds; loadedmetadata re-runs this.
+    const { duration, currentTime } = video;
+    if (video.readyState < 1 || !Number.isFinite(duration) || duration <= 0) continue;
+    if (currentTime < duration - 0.1) {
+      video.currentTime = duration - 0.1;
+      adSeekAt.set(video, Date.now());
+    } else if (Date.now() - (adSeekAt.get(video) || 0) > 1000) {
+      // Jumped already but the ad hasn't ended: nudge it the rest of the way.
+      video.currentTime = duration;
+      adSeekAt.set(video, Date.now());
+      video.play().catch(() => {});
+    }
+  }
+}
+
+function blockAutoplay() {
+  if (!blockAutoplayOn) return;
+  const toggle = document.querySelector(".ytp-autonav-toggle-button[aria-checked='true']");
+  if (toggle && Date.now() - lastAutonavClick > 2000) {
+    lastAutonavClick = Date.now();
+    (toggle.closest("button") || toggle).click();
+  }
+  // If the end-of-video countdown already started, cancel it.
+  const cancel = document.querySelector(".ytp-autonav-endscreen-upnext-cancel-button");
+  if (cancel && cancel.offsetParent !== null) cancel.click();
+}
+
+function playerTick() {
+  skipVideoAd();
+  blockAutoplay();
+}
+
+function syncPlayerHelpers() {
+  document.documentElement.classList.toggle("skip-video-ads", skipVideoAdsOn && !hidingPaused());
+  const needed = skipVideoAdsOn || blockAutoplayOn;
+  if (needed && !playerTimer) playerTimer = setInterval(playerTick, 300);
+  if (!needed && playerTimer) {
+    clearInterval(playerTimer);
+    playerTimer = 0;
+  }
+  playerTick();
+}
+
+function applySkipVideoAds(enabled) {
+  skipVideoAdsOn = Boolean(enabled);
+  syncPlayerHelpers();
+}
+
+function applyBlockAutoplay(enabled) {
+  blockAutoplayOn = Boolean(enabled);
+  syncPlayerHelpers();
+}
+
 function hideAll() {
   applyHideShorts(hideShortsOn);
   applyHideSponsored(hideSponsoredOn);
@@ -296,6 +389,7 @@ function hideAll() {
   focusSearch();
   pauseForFocus();
   syncDumbPlaceholder();
+  syncPlayerHelpers();
 }
 
 let pauseTimer = 0;
@@ -331,12 +425,14 @@ function syncDumbPlaceholder() {
   }
 }
 
-chrome.storage.local.get({ dumbYoutube: false, hideSuggestions: false, hidePlayables: true, hideComments: false, hideShorts: true, hideSponsored: true, openSearch: false, hideSidebar: false, focusTimer: false, focusEndsAt: 0, pauseEndsAt: 0 }).then((data) => {
+chrome.storage.local.get({ dumbYoutube: false, hideSuggestions: false, hidePlayables: true, hideComments: false, hideShorts: true, hideSponsored: true, openSearch: false, hideSidebar: false, focusTimer: false, focusEndsAt: 0, pauseEndsAt: 0, skipVideoAds: false, blockAutoplay: false }).then((data) => {
   dumbYoutube = Boolean(data.dumbYoutube || data.hideSuggestions);
   hidePlayablesOn = data.hidePlayables !== false;
   hideCommentsOn = Boolean(data.hideComments);
   hideShortsOn = data.hideShorts !== false;
   hideSponsoredOn = data.hideSponsored !== false;
+  skipVideoAdsOn = Boolean(data.skipVideoAds);
+  blockAutoplayOn = Boolean(data.blockAutoplay);
   applyOpenSearch(data.openSearch);
   applyFocusTimer(data.focusTimer, data.focusEndsAt);
   applyPause(data.pauseEndsAt);
@@ -368,6 +464,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.hideSidebar) {
     applyHideSidebar(changes.hideSidebar.newValue);
   }
+  if (changes.skipVideoAds) applySkipVideoAds(changes.skipVideoAds.newValue);
+  if (changes.blockAutoplay) applyBlockAutoplay(changes.blockAutoplay.newValue);
   if (changes.pauseEndsAt) applyPause(changes.pauseEndsAt.newValue);
   if (changes.focusTimer || changes.focusEndsAt) {
     chrome.storage.local.get({ focusTimer: false, focusEndsAt: 0 }).then((data) => {
@@ -375,6 +473,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
     });
   }
 });
+
+// React the moment an ad loads instead of waiting for the next poll.
+for (const type of ["loadedmetadata", "durationchange", "playing", "timeupdate"]) {
+  document.addEventListener(type, (event) => {
+    if (skipVideoAdsOn && event.target instanceof HTMLVideoElement) skipVideoAd();
+  }, true);
+}
 
 document.addEventListener("play", (event) => {
   if (event.target instanceof HTMLVideoElement) pauseForFocus();
