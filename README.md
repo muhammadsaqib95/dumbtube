@@ -1,5 +1,7 @@
 # DumbTube
 
+[![Checks](https://github.com/muhammadsaqib95/hide-youtube-shorts/actions/workflows/checks.yml/badge.svg)](https://github.com/muhammadsaqib95/hide-youtube-shorts/actions/workflows/checks.yml)
+
 **Search, watch, skip the rest.** A Chrome extension that strips YouTube back to search and the video you chose. It hides Shorts, feeds, sponsored cards and video ads, and Google display ads on other sites.
 
 ## What each switch does
@@ -73,6 +75,10 @@ src/
     google-ads.js      Hide Google ads
     google-ads.css
 tests/                 browser tests (not part of the extension)
+package.json           dev tooling only: lint and tests
+eslint.config.js
+.github/workflows/     checks run on every push and pull request
+ROADMAP.md             planned work, written for AI coding agents
 ```
 
 Always read and write settings through `DumbTubeSettings.load/save/onChanged`, which put each key in the right storage area.
@@ -89,19 +95,21 @@ Each YouTube feature registers itself with `DumbTube.register({ run, ... })` in 
 
 Nothing is sent anywhere: all data stays in Chrome's own storage.
 
-## Tests
+## Tests and lint
 
-The tests load the extension into Chromium with Playwright.
+The tests load the extension into Chromium with Playwright. Run everything from the repo root:
 
 ```sh
-cd tests
-npm install
+npm ci
 npx playwright install chromium   # first time only
+npm run lint                      # ESLint
 npm test                          # fake YouTube pages: fast, no network
 npm run test:live                 # real YouTube: slower, needs internet
 ```
 
 `npm test` checks every switch against fake pages, so its results are the same every run. `npm run test:live` checks search ads, autoplay and ad skipping on real YouTube. It skips a check when YouTube serves no ads during the run. Run both after YouTube changes its layout.
+
+GitHub Actions runs `npm run lint` and `npm test` on every push to `main` and on every pull request. The live tests aren't part of it, because they depend on YouTube serving ads.
 
 Branded Google Chrome no longer loads unpacked extensions from the command line, so the tests use Playwright's Chromium. Set `CHROME_PATH` to use a different Chromium build.
 

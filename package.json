@@ -1,0 +1,17 @@
+{
+  "name": "dumbtube",
+  "private": true,
+  "type": "module",
+  "description": "Dev tooling for the DumbTube extension: lint and browser tests. Not part of the extension itself.",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node tests/mock.test.mjs",
+    "test:live": "node tests/live.test.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "globals": "17.14.0",
+    "playwright": "1.48.2"
+  }
+}
