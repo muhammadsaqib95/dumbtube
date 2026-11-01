@@ -1,5 +1,5 @@
 // Fast, repeatable tests against fake YouTube pages. No network needed.
-import { launch, check, section, finish, wait, fulfillWav } from "./helpers.mjs";
+import { launch, check, section, finish, wait, waitFor, fulfillWav } from "./helpers.mjs";
 
 const PLAYER_PAGE = `<!doctype html><html><body>
 <div id="inline-preview" class="html5-video-player" style="display:none"><video src="/preview.wav"></video></div>
@@ -118,9 +118,12 @@ section("Skip video ads, block autoplay, pause");
   check("main video is not moved", v.t < 1, `t=${v.t.toFixed(1)}`);
 
   await setAd(page, true, "/ad2.wav");
-  await wait(1500);
-  check("second ad counted", (await read({ skippedAds: 0 })).skippedAds === 2);
-  check("counted as video ads", (await read({ skippedByKind: null })).skippedByKind?.video === 2);
+  const second = await waitFor(
+    () => read({ skippedAds: 0, skippedByKind: null }),
+    (c) => c.skippedAds >= 2 && c.skippedByKind?.video >= 2
+  );
+  check("second ad counted", second.skippedAds === 2, `total=${second.skippedAds}`);
+  check("counted as video ads", second.skippedByKind?.video === 2, JSON.stringify(second.skippedByKind));
 
   await setAd(page, false, "/content2.wav");
   await wait(700);

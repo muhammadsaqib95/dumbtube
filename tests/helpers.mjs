@@ -80,6 +80,18 @@ export async function launch({ settings = {}, viewport = { width: 1280, height: 
 
 export const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Polls `get` until `done(value)` is true or `timeout` passes, and returns the
+// last value. Use it instead of a fixed wait when a slow machine may need longer.
+export async function waitFor(get, done, timeout = 5000) {
+  const until = Date.now() + timeout;
+  let value = await get();
+  while (!done(value) && Date.now() < until) {
+    await wait(100);
+    value = await get();
+  }
+  return value;
+}
+
 // Tiny pass/fail reporter. `skip` is for live checks YouTube didn't give us a
 // chance to run (for example, no ad was served).
 const results = { pass: 0, fail: 0, skip: 0 };
