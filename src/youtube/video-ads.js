@@ -24,12 +24,6 @@
   }
 
   function skipAd(video) {
-    // A new src is a new ad (YouTube plays several in a row).
-    if (video.currentSrc && countedSrc.get(video) !== video.currentSrc) {
-      countedSrc.set(video, video.currentSrc);
-      jumpedAt.delete(video);
-      sendSkipped(1, "video");
-    }
     if (!video.muted) {
       video.muted = true;
       mutedByUs.add(video);
@@ -39,6 +33,15 @@
     // event brings us back here once it has.
     const { duration, currentTime } = video;
     if (video.readyState < HTMLMediaElement.HAVE_METADATA || !Number.isFinite(duration) || duration <= 0) return;
+
+    // A new src is a new ad (YouTube plays several in a row). Only trust
+    // currentSrc once the ad has loaded: right after the src changes it can
+    // still name the previous video, which would count one ad twice.
+    if (video.currentSrc && countedSrc.get(video) !== video.currentSrc) {
+      countedSrc.set(video, video.currentSrc);
+      jumpedAt.delete(video);
+      sendSkipped(1, "video");
+    }
 
     if (currentTime < duration - 0.1) {
       video.currentTime = duration - 0.1;
