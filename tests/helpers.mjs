@@ -83,10 +83,26 @@ export const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Tiny pass/fail reporter. `skip` is for live checks YouTube didn't give us a
 // chance to run (for example, no ad was served).
 const results = { pass: 0, fail: 0, skip: 0 };
+let currentSection = "";
+
+// On GitHub Actions, also report problems as annotations, which show on the
+// run's summary page without opening the full log.
+const onGitHub = Boolean(process.env.GITHUB_ACTIONS);
+const escapeAnnotation = (text) => String(text).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+function annotate(title, message) {
+  if (onGitHub) console.log(`::error title=${escapeAnnotation(title).replace(/[:,]/g, " ")}::${escapeAnnotation(message)}`);
+}
+
+process.on("uncaughtException", (error) => {
+  console.error(error);
+  annotate(`Test crashed in "${currentSection}"`, error?.stack || error);
+  process.exit(1);
+});
 
 export function check(name, ok, detail = "") {
   results[ok ? "pass" : "fail"] += 1;
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  (${detail})` : ""}`);
+  if (!ok) annotate(`FAIL ${currentSection}`, `${name}${detail ? ` (${detail})` : ""}`);
 }
 
 export function skip(name, reason) {
@@ -95,6 +111,7 @@ export function skip(name, reason) {
 }
 
 export function section(title) {
+  currentSection = title;
   console.log(`\n${title}`);
 }
 
