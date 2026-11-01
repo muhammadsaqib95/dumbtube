@@ -115,3 +115,14 @@ html.skip-video-ads .ytp-ad-text-overlay {
 html.skip-video-ads .html5-video-player.ad-showing video {
   visibility: hidden !important;
 }
+
+/* The image card YouTube shows at the end of an ad break can't be skipped by
+   code, so hide it and leave only its Skip button (one real click ends it). */
+html.skip-video-ads .html5-video-player.ad-showing .video-ads {
+  visibility: hidden !important;
+}
+
+html.skip-video-ads .html5-video-player.ad-showing .video-ads .ytp-skip-ad-button,
+html.skip-video-ads .html5-video-player.ad-showing .video-ads .ytp-skip-ad-button * {
+  visibility: visible !important;
+}

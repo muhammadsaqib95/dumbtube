@@ -1,37 +1,48 @@
 {
   "manifest_version": 3,
-  "name": "Hide Shorts & Google Ads",
-  "version": "1.2.0",
-  "description": "Hides YouTube Shorts and Google display ads (AdSense and Google Ad Manager) on websites.",
+  "name": "DumbTube",
+  "version": "1.3.0",
+  "description": "Search, watch, skip the rest. Hides YouTube Shorts, feeds and sponsored cards, skips video ads, and hides Google ads on other sites.",
   "icons": {
-    "16": "dumbtube-16x16.png",
-    "48": "dumbtube-48x48.png",
-    "128": "dumbtube-128x128.png"
+    "16": "icons/dumbtube-16x16.png",
+    "48": "icons/dumbtube-48x48.png",
+    "128": "icons/dumbtube-128x128.png"
   },
   "action": {
-    "default_title": "Skipped Google ads",
-    "default_popup": "popup.html",
+    "default_title": "DumbTube",
+    "default_popup": "src/popup/popup.html",
     "default_icon": {
-      "16": "dumbtube-16x16.png",
-      "48": "dumbtube-48x48.png",
-      "128": "dumbtube-128x128.png"
+      "16": "icons/dumbtube-16x16.png",
+      "48": "icons/dumbtube-48x48.png",
+      "128": "icons/dumbtube-128x128.png"
     }
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/background.js"
   },
   "permissions": ["storage"],
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*"],
-      "js": ["content.js"],
-      "css": ["styles.css"],
+      "matches": ["*://www.youtube.com/*", "*://music.youtube.com/*"],
+      "js": [
+        "src/shared/settings.js",
+        "src/youtube/core.js",
+        "src/youtube/sponsored.js",
+        "src/youtube/shorts.js",
+        "src/youtube/playables.js",
+        "src/youtube/page-layout.js",
+        "src/youtube/focus-timer.js",
+        "src/youtube/video-ads.js",
+        "src/youtube/autoplay.js",
+        "src/youtube/main.js"
+      ],
+      "css": ["src/youtube/youtube.css"],
       "run_at": "document_start"
     },
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["ads.js"],
-      "css": ["ads.css"],
+      "js": ["src/shared/settings.js", "src/sites/google-ads.js"],
+      "css": ["src/sites/google-ads.css"],
       "run_at": "document_start",
       "all_frames": true
     }
