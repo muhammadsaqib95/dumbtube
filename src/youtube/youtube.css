@@ -66,7 +66,8 @@ html.hide-comments ytd-engagement-panel-section-list-renderer[target-id="engagem
   display: none !important;
 }
 
-#focus-timer-note {
+/* Messages from the focus timer and the daily limit */
+.dumbtube-note {
   position: fixed;
   left: 50%;
   top: 24px;
@@ -84,7 +85,11 @@ html.hide-comments ytd-engagement-panel-section-list-renderer[target-id="engagem
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
-#focus-timer-note button {
+.dumbtube-note p {
+  margin: 0;
+}
+
+.dumbtube-note button {
   border: 0;
   border-radius: 8px;
   background: #ff2a2a;
@@ -93,6 +98,11 @@ html.hide-comments ytd-engagement-panel-section-list-renderer[target-id="engagem
   font-size: 13px;
   padding: 6px 10px;
   cursor: pointer;
+}
+
+.dumbtube-note button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 
 html.dumb-youtube #dumb-yt-note {
@@ -105,6 +115,7 @@ html.dumb-youtube #dumb-yt-note {
   font: 16px system-ui, sans-serif;
   pointer-events: none;
 }
+
 /* Banner and text ads over the video, and the ad itself while it is skipped */
 html.skip-video-ads .ytp-ad-overlay-container,
 html.skip-video-ads .ytp-ad-image-overlay,

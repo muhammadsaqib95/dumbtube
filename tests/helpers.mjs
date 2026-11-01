@@ -62,8 +62,10 @@ export async function launch({ settings = {}, viewport = { width: 1280, height: 
   });
   const sw = ctx.serviceWorkers()[0] || (await ctx.waitForEvent("serviceworker"));
   const extensionId = new URL(sw.url()).host;
-  const store = (values) => sw.evaluate((v) => chrome.storage.local.set(v), values);
-  const read = (defaults) => sw.evaluate((d) => chrome.storage.local.get(d), defaults);
+  // Go through the extension's own settings layer so each key lands in the
+  // right storage area (sync or local).
+  const store = (values) => sw.evaluate((v) => DumbTubeSettings.save(v), values);
+  const read = (defaults) => sw.evaluate((d) => DumbTubeSettings.load(d), defaults);
   if (Object.keys(settings).length) await store(settings);
   return { ctx, sw, extensionId, store, read };
 }

@@ -3,7 +3,7 @@
 // everything if the extension is reloaded underneath this tab.
 (() => {
   const { settings, features, onMusic, extensionAlive, onStop } = DumbTube;
-  const { DEFAULTS, COUNTER_KEYS } = DumbTubeSettings;
+  const { load, onChanged, STAT_KEYS } = DumbTubeSettings;
 
   // YouTube Music shares the video player but none of YouTube's page layout.
   const enabled = features.filter((feature) => !onMusic || feature.onMusic);
@@ -25,7 +25,7 @@
   }
 
   function applySettings(values) {
-    const keys = new Set(Object.keys(values).filter((key) => !COUNTER_KEYS.includes(key)));
+    const keys = new Set(Object.keys(values).filter((key) => !STAT_KEYS.includes(key)));
     if (!keys.size) return;
     for (const key of keys) settings[key] = values[key];
     if (keys.has("pauseEndsAt")) schedulePauseEnd();
@@ -33,14 +33,8 @@
     runAll();
   }
 
-  chrome.storage.local.get(DEFAULTS).then(applySettings);
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local") return;
-    const values = {};
-    for (const [key, { newValue }] of Object.entries(changes)) values[key] = newValue ?? DEFAULTS[key];
-    applySettings(values);
-  });
+  load().then(applySettings);
+  onChanged(applySettings);
 
   // YouTube is a single-page app: watch for new content and re-run, at most
   // once per PAGE_CHANGE_DELAY_MS.

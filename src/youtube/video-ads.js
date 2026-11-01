@@ -28,7 +28,7 @@
     if (video.currentSrc && countedSrc.get(video) !== video.currentSrc) {
       countedSrc.set(video, video.currentSrc);
       jumpedAt.delete(video);
-      sendSkipped(1);
+      sendSkipped(1, "video");
     }
     if (!video.muted) {
       video.muted = true;

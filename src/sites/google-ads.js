@@ -1,10 +1,11 @@
 // "Hide Google ads": AdSense and Google Ad Manager slots on any website.
 // google-ads.css hides them as soon as the page starts loading; this script
-// counts them, hides ones the CSS can't reach, and handles "Pause hiding".
+// counts them, hides ones the CSS can't reach, and handles "Pause hiding" and
+// sites where the user chose to leave ads alone.
 //
 // Wrapped in a function because it shares a page with the YouTube scripts.
 (() => {
-  const { DEFAULTS } = DumbTubeSettings;
+  const { DEFAULTS, load, save, onChanged, isAllowed } = DumbTubeSettings;
 
   const AD_SELECTOR = [
     "ins.adsbygoogle",
@@ -20,7 +21,18 @@
     "iframe[src*='googleadservices.com/pagead']",
   ].join(",");
 
-  const settings = { hideGoogleAds: DEFAULTS.hideGoogleAds, pauseEndsAt: DEFAULTS.pauseEndsAt };
+  const KEYS = {
+    hideGoogleAds: DEFAULTS.hideGoogleAds,
+    googleAdsAllowlist: DEFAULTS.googleAdsAllowlist,
+    pauseEndsAt: DEFAULTS.pauseEndsAt,
+  };
+  const settings = { ...KEYS };
+
+  // Ads usually sit in iframes from other domains; the site that counts is
+  // the one in the address bar.
+  const site = location.ancestorOrigins?.length
+    ? new URL(location.ancestorOrigins[location.ancestorOrigins.length - 1]).hostname
+    : location.hostname;
   let pauseTimer = 0;
   let observer = null;
   let extensionGone = false;
@@ -41,7 +53,7 @@
     if (!settings.pauseEndsAt) return false;
     if (Date.now() < settings.pauseEndsAt) return true;
     settings.pauseEndsAt = 0;
-    if (extensionAlive()) chrome.storage.local.set({ pauseHiding: false, pauseEndsAt: 0 }).catch(() => {});
+    if (extensionAlive()) save({ pauseHiding: false, pauseEndsAt: 0 }).catch(() => {});
     return false;
   }
 
@@ -54,7 +66,7 @@
 
   function hideAds() {
     if (!extensionAlive()) return;
-    const on = settings.hideGoogleAds && !paused();
+    const on = settings.hideGoogleAds && !paused() && !isAllowed(site, settings.googleAdsAllowlist);
     document.documentElement.classList.toggle("hide-google-ads", on);
     if (!on) {
       showHiddenAds();
@@ -75,11 +87,14 @@
       el.dataset.hiddenGoogleAd = "1";
       el.style.setProperty("display", "none", "important");
     }
-    if (newlyHidden > 0) chrome.runtime.sendMessage({ type: "ads-skipped", count: newlyHidden }).catch(() => {});
+    if (newlyHidden > 0) {
+      chrome.runtime.sendMessage({ type: "ads-skipped", count: newlyHidden, kind: "google" }).catch(() => {});
+    }
   }
 
   function applySettings(values) {
     if ("hideGoogleAds" in values) settings.hideGoogleAds = values.hideGoogleAds !== false;
+    if ("googleAdsAllowlist" in values) settings.googleAdsAllowlist = values.googleAdsAllowlist || [];
     if ("pauseEndsAt" in values) {
       settings.pauseEndsAt = Number(values.pauseEndsAt) || 0;
       clearTimeout(pauseTimer);
@@ -92,14 +107,11 @@
   // Hide straight away; stored settings arrive a moment later.
   document.documentElement.classList.add("hide-google-ads");
 
-  chrome.storage.local.get({ hideGoogleAds: DEFAULTS.hideGoogleAds, pauseEndsAt: DEFAULTS.pauseEndsAt }).then(applySettings);
+  load(KEYS).then(applySettings);
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local") return;
-    const values = {};
-    if (changes.hideGoogleAds) values.hideGoogleAds = changes.hideGoogleAds.newValue;
-    if (changes.pauseEndsAt) values.pauseEndsAt = changes.pauseEndsAt.newValue;
-    if (Object.keys(values).length) applySettings(values);
+  onChanged((values) => {
+    const relevant = Object.fromEntries(Object.entries(values).filter(([key]) => key in KEYS));
+    if (Object.keys(relevant).length) applySettings(relevant);
   });
 
   // At most once per frame, however many elements the page adds.

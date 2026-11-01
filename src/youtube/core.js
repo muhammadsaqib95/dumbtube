@@ -36,11 +36,16 @@ globalThis.DumbTube = (() => {
   }
 
   function save(values) {
-    if (extensionAlive()) chrome.storage.local.set(values).catch(() => {});
+    if (extensionAlive()) DumbTubeSettings.save(values).catch(() => {});
   }
 
-  function sendSkipped(count) {
-    if (extensionAlive()) chrome.runtime.sendMessage({ type: "ads-skipped", count }).catch(() => {});
+  function send(message) {
+    if (extensionAlive()) chrome.runtime.sendMessage(message).catch(() => {});
+  }
+
+  // kind: "sponsored" or "video", for the per-kind counts in the popup.
+  function sendSkipped(count, kind) {
+    send({ type: "ads-skipped", count, kind });
   }
 
   function paused() {
@@ -76,6 +81,34 @@ globalThis.DumbTube = (() => {
     });
   }
 
+  // A message pinned to the top of the page with one button, used by the focus
+  // timer and the daily limit. Styled by .dumbtube-note in youtube.css.
+  function showNote(id, text, buttonLabel, onClick) {
+    if (document.getElementById(id)) return;
+    const note = document.createElement("div");
+    note.id = id;
+    note.className = "dumbtube-note";
+    note.setAttribute("role", "alert");
+    const message = document.createElement("p");
+    message.textContent = text;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = buttonLabel;
+    button.addEventListener("click", onClick);
+    note.append(message, button);
+    document.documentElement.appendChild(note);
+  }
+
+  function hideNote(id) {
+    document.getElementById(id)?.remove();
+  }
+
+  function pauseAllVideos() {
+    for (const video of document.querySelectorAll("video")) {
+      if (!video.paused) video.pause();
+    }
+  }
+
   // The element's own text, without its children's text.
   function ownText(el) {
     let text = "";
@@ -93,7 +126,11 @@ globalThis.DumbTube = (() => {
     extensionAlive,
     onStop,
     save,
+    send,
     sendSkipped,
+    showNote,
+    hideNote,
+    pauseAllVideos,
     paused,
     active,
     setPageClass,

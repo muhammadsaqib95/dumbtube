@@ -41,6 +41,10 @@ const FEED_PAGE = `<!doctype html><html><body><ytd-app>
 <video id="v" src="/clip.wav" preload="auto"></video>
 </ytd-app></body></html>`;
 
+const PLAIN_WATCH_PAGE = `<!doctype html><html><body>
+<div id="movie_player" class="html5-video-player"><video preload="auto" src="/long.wav"></video></div>
+</body></html>`;
+
 const NEWS_PAGE = `<!doctype html><html><body><p>article</p>
 <ins class="adsbygoogle" id="adsense">ad</ins>
 <div id="div-gpt-ad-123"><iframe id="google_ads_iframe_1"></iframe></div>
@@ -49,9 +53,10 @@ const NEWS_PAGE = `<!doctype html><html><body><p>article</p>
 async function serveFakes(ctx) {
   await ctx.route(/^https:\/\/(www|music|studio)\.youtube\.com\/.*/, (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname.endsWith(".wav")) return fulfillWav(route);
+    if (url.pathname.endsWith(".wav")) return fulfillWav(route, url.pathname === "/long.wav" ? 600 : 30);
     if (url.hostname === "music.youtube.com") return route.fulfill({ contentType: "text/html", body: MUSIC_PAGE });
     if (url.hostname === "studio.youtube.com") return route.fulfill({ contentType: "text/html", body: "<!doctype html><body>studio</body>" });
+    if (url.searchParams.get("v") === "plain") return route.fulfill({ contentType: "text/html", body: PLAIN_WATCH_PAGE });
     if (url.pathname === "/results") return route.fulfill({ contentType: "text/html", body: SEARCH_PAGE });
     if (url.pathname === "/" || url.pathname.startsWith("/feed")) return route.fulfill({ contentType: "text/html", body: FEED_PAGE });
     return route.fulfill({ contentType: "text/html", body: PLAYER_PAGE });
@@ -115,6 +120,7 @@ section("Skip video ads, block autoplay, pause");
   await setAd(page, true, "/ad2.wav");
   await wait(1500);
   check("second ad counted", (await read({ skippedAds: 0 })).skippedAds === 2);
+  check("counted as video ads", (await read({ skippedByKind: null })).skippedByKind?.video === 2);
 
   await setAd(page, false, "/content2.wav");
   await wait(700);
@@ -261,9 +267,135 @@ section("Google ads on other sites");
   check("page content stays", await visible(page, "p"));
   const { skippedAds } = await read({ skippedAds: 0 });
   check("each ad counted once", skippedAds === 2, `count=${skippedAds}`);
+  check("counted as Google ads", (await read({ skippedByKind: null })).skippedByKind?.google === 2);
   await store({ hideGoogleAds: false });
   await wait(500);
   check("switch off shows the ads", await visible(page, "#adsense"));
+  await ctx.close();
+}
+
+// ---------------------------------------------------------------------------
+section("Google ads: sites where ads are allowed");
+{
+  const { ctx, extensionId, store, read } = await launch({ settings: { hideGoogleAds: true, googleAdsAllowlist: ["example.com"] } });
+  await serveFakes(ctx);
+  const page = await ctx.newPage();
+  await page.goto("https://news.example.com/article");
+  await wait(1000);
+  check("ads left alone on an allowed site (and its subdomains)", await visible(page, "#adsense"));
+
+  const popup = await ctx.newPage();
+  await popup.goto(`chrome-extension://${extensionId}/src/popup/popup.html?site=news.example.com`);
+  await wait(500);
+  check("popup shows a row for this site", await popup.isVisible("#site-row"));
+  check("row says ads are not hidden here", !(await popup.isChecked("#site-ads")));
+  await popup.click("#site-row");
+  await wait(500);
+  check("switching it on removes the site from the list", (await read({ googleAdsAllowlist: null })).googleAdsAllowlist.length === 0);
+  check("ads hidden again on the page", !(await visible(page, "#adsense")));
+  await popup.click("#site-row");
+  await wait(300);
+  const list = (await read({ googleAdsAllowlist: null })).googleAdsAllowlist;
+  check("switching it off adds the site", list.includes("news.example.com"), JSON.stringify(list));
+
+  await popup.goto(`chrome-extension://${extensionId}/src/popup/popup.html?site=www.youtube.com`);
+  await wait(400);
+  check("no site row on YouTube", !(await popup.isVisible("#site-row")));
+  await store({ googleAdsAllowlist: [] });
+  await ctx.close();
+}
+
+// ---------------------------------------------------------------------------
+section("Daily limit");
+{
+  const { ctx, sw, store, read } = await launch({ settings: { dailyLimit: true, dailyLimitMinutes: 5 } });
+  await serveFakes(ctx);
+  const today = await sw.evaluate(() => DumbTubeSettings.localDay());
+  const page = await ctx.newPage();
+  await page.goto("https://www.youtube.com/watch?v=plain");
+  await page.evaluate(() => document.querySelector("#movie_player video").play());
+  await wait(12000);
+  const watched = (await read({ watchedToday: null })).watchedToday;
+  check("watch time is counted while a video plays", watched?.day === today && watched.seconds >= 5, JSON.stringify(watched));
+  const paused = () => page.evaluate(() => document.querySelector("#movie_player video").paused);
+  check("under the limit: video keeps playing", !(await paused()));
+
+  await store({ watchedToday: { day: today, seconds: 301, lastTick: Date.now() } });
+  await wait(800);
+  check("over the limit: video paused", await paused());
+  check("over the limit: message shown", await visible(page, "#daily-limit-note"));
+  await page.evaluate(() => document.querySelector("#movie_player video").play());
+  await wait(500);
+  check("pressing play again is paused again", await paused());
+
+  await page.click("#daily-limit-note button");
+  await wait(600);
+  check("'Keep watching today' removes the message", !(await visible(page, "#daily-limit-note")));
+  check("'Keep watching today' is remembered for today", (await read({ dailyLimitSnoozed: "" })).dailyLimitSnoozed === today);
+  await page.evaluate(() => document.querySelector("#movie_player video").play());
+  await wait(800);
+  check("video can play after choosing to keep watching", !(await paused()));
+
+  // Two tabs playing at once count as one stretch of time, not double.
+  const second = await ctx.newPage();
+  await second.goto("https://www.youtube.com/watch?v=plain");
+  await second.evaluate(() => document.querySelector("#movie_player video").play());
+  const before = (await read({ watchedToday: null })).watchedToday.seconds;
+  await wait(15000);
+  const added = (await read({ watchedToday: null })).watchedToday.seconds - before;
+  check("two tabs playing aren't counted twice", added >= 10 && added <= 20, `added ${added.toFixed(1)}s in 15s`);
+  await ctx.close();
+}
+
+// ---------------------------------------------------------------------------
+section("Keyboard shortcuts");
+{
+  const { ctx, sw, read, store } = await launch({ settings: { skippedAds: 12, focusMinutes: 30 } });
+  const badge = () => sw.evaluate(() => chrome.action.getBadgeText({}));
+  await sw.evaluate(() => togglePause());
+  await wait(300);
+  check("pause shortcut starts a 10-minute pause", (await read({ pauseEndsAt: 0 })).pauseEndsAt > Date.now() + 9 * 60000);
+  check("icon shows II while paused", (await badge()) === "II");
+  await sw.evaluate(() => togglePause());
+  await wait(300);
+  check("pressing it again resumes", (await read({ pauseEndsAt: 0 })).pauseEndsAt === 0);
+  check("icon shows the count again", (await badge()) === "12");
+
+  await sw.evaluate(() => toggleFocusTimer());
+  await wait(200);
+  const focus = await read({ focusTimer: false, focusEndsAt: 0 });
+  check("focus shortcut starts the timer with your minutes", focus.focusTimer && Math.abs(focus.focusEndsAt - Date.now() - 30 * 60000) < 5000);
+  await sw.evaluate(() => toggleFocusTimer());
+  await wait(200);
+  check("pressing it again stops it", !(await read({ focusTimer: false })).focusTimer);
+
+  const commands = await sw.evaluate(() => chrome.commands.getAll());
+  check("both shortcuts are registered", ["toggle-pause", "toggle-focus-timer"].every((n) => commands.some((c) => c.name === n)));
+  await store({ skippedAds: 0 });
+  await ctx.close();
+}
+
+// ---------------------------------------------------------------------------
+section("Settings sync");
+{
+  const { ctx, sw, store } = await launch();
+  await store({ hideShorts: false, skipVideoAds: true, skippedAds: 5, pauseEndsAt: 123 });
+  const areas = await sw.evaluate(async () => ({ sync: await chrome.storage.sync.get(null), local: await chrome.storage.local.get(null) }));
+  check("switches are saved to Chrome sync", areas.sync.hideShorts === false && areas.sync.skipVideoAds === true);
+  check("switches are not kept locally", !("hideShorts" in areas.local));
+  check("counters and timers stay on this computer", areas.local.skippedAds === 5 && !("skippedAds" in areas.sync) && areas.local.pauseEndsAt === 123);
+
+  // Settings saved by an older version (all local) move to sync once.
+  const moved = await sw.evaluate(async () => {
+    await chrome.storage.sync.clear();
+    await chrome.storage.sync.set({ hideComments: true }); // already synced from another computer
+    await chrome.storage.local.set({ movedToSync: false, hideSidebar: true, hideComments: false, skippedAds: 9 });
+    await moveSettingsToSync();
+    return { sync: await chrome.storage.sync.get(null), local: await chrome.storage.local.get(null) };
+  });
+  check("old settings are copied to sync", moved.sync.hideSidebar === true);
+  check("settings already synced from another computer win", moved.sync.hideComments === true);
+  check("old local copies are removed, counters kept", !("hideSidebar" in moved.local) && moved.local.skippedAds === 9);
   await ctx.close();
 }
 
@@ -279,7 +411,14 @@ section("Popup");
     await p.close();
     return d;
   });
-  await store({ skippedAds: 1234, skippedToday: { day: today, count: 7 }, skipVideoAds: true, blockAutoplay: false });
+  await store({
+    skippedAds: 1234,
+    skippedToday: { day: today, count: 7 },
+    skippedByKind: { sponsored: 1000, video: 200, google: 34 },
+    watchedToday: { day: today, seconds: 3900, lastTick: 0 },
+    skipVideoAds: true,
+    blockAutoplay: false,
+  });
   const page = await ctx.newPage();
   await page.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
   await wait(500);
@@ -292,6 +431,28 @@ section("Popup");
   check("total shown", ui.total === "1,234", ui.total);
   check("skipped today shown", ui.today === "7", ui.today);
   check("switches show saved settings", ui.skip && !ui.autoplay);
+  check("counts by kind shown", (await page.textContent("#breakdown")) === "Sponsored 1,000 · Video 200 · Google 34", await page.textContent("#breakdown"));
+  check("watch time shown", (await page.textContent("#watched-today")) === "1 h 5 min watched today", await page.textContent("#watched-today"));
+  const shortcut = await page.textContent("#shortcut-pause");
+  check("shortcut keys shown", /P/.test(shortcut), shortcut);
+
+  const a11y = await page.evaluate(() => {
+    const inputs = [...document.querySelectorAll("input")];
+    const named = (el) => Boolean(el.getAttribute("aria-label") || el.closest("label")?.textContent.trim());
+    return {
+      switchesWithRole: inputs.filter((i) => i.type === "checkbox").every((i) => i.getAttribute("role") === "switch"),
+      allNamed: inputs.every(named),
+    };
+  });
+  check("every switch is announced as a switch", a11y.switchesWithRole);
+  check("every control has a name", a11y.allNamed);
+  await page.keyboard.press("Tab");
+  check("keyboard focus is visible", await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle !== "none"));
+
+  await page.emulateMedia({ colorScheme: "light" });
+  check("light theme follows the system", (await page.evaluate(() => getComputedStyle(document.body).backgroundColor)) === "rgb(255, 255, 255)");
+  await page.emulateMedia({ colorScheme: "dark" });
+  check("dark theme follows the system", (await page.evaluate(() => getComputedStyle(document.body).backgroundColor)) === "rgb(20, 20, 20)");
 
   await store({ skippedToday: { day: "2000-01-01", count: 99 } });
   await wait(300);
@@ -300,6 +461,7 @@ section("Popup");
   await page.click("#reset");
   await wait(300);
   check("Reset clears both counts", (await page.textContent("#count")) === "0" && (await page.textContent("#today")) === "0");
+  check("Reset clears counts by kind", (await page.textContent("#breakdown")) === "Sponsored 0 · Video 0 · Google 0");
   await ctx.close();
 }
 

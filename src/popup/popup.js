@@ -1,11 +1,7 @@
-// The toolbar popup: on/off switches, the focus timer, "Pause hiding" and the
-// ad counters. Everything is saved to chrome.storage.local, which the content
-// scripts listen to.
-const { DEFAULTS, localDay } = DumbTubeSettings;
-
-const PAUSE_MS = 10 * 60 * 1000;
-const MIN_FOCUS_MINUTES = 5;
-const MAX_FOCUS_MINUTES = 180;
+// The toolbar popup: switches, the focus timer and daily limit, per-site
+// Google ads, "Pause hiding", counters and keyboard shortcuts. Settings are
+// saved through DumbTubeSettings, which the content scripts listen to.
+const { DEFAULTS, PAUSE_MS, load, save, onChanged, localDay, siteOf, isAllowed } = DumbTubeSettings;
 
 // Plain switches: element id -> setting key.
 const SWITCHES = {
@@ -18,28 +14,49 @@ const SWITCHES = {
   "hide-sidebar": "hideSidebar",
   "open-search": "openSearch",
   "hide-google-ads": "hideGoogleAds",
+  "daily-limit": "dailyLimit",
 };
 
+const FOCUS_RANGE = { min: 5, max: 180 };
+const DAILY_LIMIT_RANGE = { min: 5, max: 600 };
+const YOUTUBE_SITES = ["youtube.com", "music.youtube.com"];
+
 const $ = (id) => document.getElementById(id);
-const save = (values) => chrome.storage.local.set(values);
+const state = { ...DEFAULTS };
+
+function clampMinutes(input, range, fallback) {
+  const minutes = Math.round(Number(input.value));
+  const clamped = Number.isFinite(minutes) ? Math.min(range.max, Math.max(range.min, minutes)) : fallback;
+  input.value = String(clamped);
+  return clamped;
+}
 
 // ---- Counters --------------------------------------------------------------
 
-function renderTotal(count) {
-  $("count").textContent = Number(count || 0).toLocaleString();
+const formatNumber = (n) => Number(n || 0).toLocaleString();
+
+function renderCounts() {
+  $("count").textContent = formatNumber(state.skippedAds);
+  const today = state.skippedToday?.day === localDay() ? state.skippedToday.count : 0;
+  $("today").textContent = formatNumber(today);
+  const byKind = { ...DEFAULTS.skippedByKind, ...state.skippedByKind };
+  $("breakdown").textContent =
+    `Sponsored ${formatNumber(byKind.sponsored)} · Video ${formatNumber(byKind.video)} · Google ${formatNumber(byKind.google)}`;
 }
 
-function renderToday(today) {
-  const count = today?.day === localDay() ? today.count : 0;
-  $("today").textContent = Number(count || 0).toLocaleString();
-}
-
-$("reset").addEventListener("click", async () => {
-  await save({ skippedAds: 0, skippedToday: { day: localDay(), count: 0 } });
-  await chrome.action.setBadgeText({ text: "" });
+$("reset").addEventListener("click", () => {
+  save({ skippedAds: 0, skippedByKind: DEFAULTS.skippedByKind, skippedToday: { day: localDay(), count: 0 } });
 });
 
 // ---- Switches ---------------------------------------------------------------
+
+function renderSwitches() {
+  for (const [id, key] of Object.entries(SWITCHES)) $(id).checked = Boolean(state[key]);
+  $("dumb-youtube").checked = Boolean(state.dumbYoutube || state.hideSuggestions);
+  $("focus-timer").checked = Boolean(state.focusTimer);
+  $("focus-minutes").value = String(state.focusMinutes);
+  $("daily-limit-minutes").value = String(state.dailyLimitMinutes);
+}
 
 for (const [id, key] of Object.entries(SWITCHES)) {
   $(id).addEventListener("change", (event) => save({ [key]: event.target.checked }));
@@ -50,31 +67,69 @@ $("dumb-youtube").addEventListener("change", (event) => {
   save({ dumbYoutube: event.target.checked, hideSuggestions: false });
 });
 
-// ---- Focus timer ------------------------------------------------------------
-
-function focusMinutes() {
-  const minutes = Math.round(Number($("focus-minutes").value));
-  if (!Number.isFinite(minutes)) return DEFAULTS.focusMinutes;
-  return Math.min(MAX_FOCUS_MINUTES, Math.max(MIN_FOCUS_MINUTES, minutes));
-}
+// ---- Focus timer and daily limit ------------------------------------------------
 
 function saveFocusTimer() {
   const enabled = $("focus-timer").checked;
-  const minutes = focusMinutes();
-  $("focus-minutes").value = String(minutes);
-  save({
-    focusTimer: enabled,
-    focusMinutes: minutes,
-    focusEndsAt: enabled ? Date.now() + minutes * 60 * 1000 : 0,
-  });
+  const minutes = clampMinutes($("focus-minutes"), FOCUS_RANGE, DEFAULTS.focusMinutes);
+  save({ focusTimer: enabled, focusMinutes: minutes, focusEndsAt: enabled ? Date.now() + minutes * 60 * 1000 : 0 });
 }
 
 $("focus-timer").addEventListener("change", saveFocusTimer);
 $("focus-minutes").addEventListener("change", saveFocusTimer);
 
+$("daily-limit-minutes").addEventListener("change", () => {
+  save({ dailyLimitMinutes: clampMinutes($("daily-limit-minutes"), DAILY_LIMIT_RANGE, DEFAULTS.dailyLimitMinutes) });
+});
+
+function formatDuration(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
+function renderWatched() {
+  const watched = state.watchedToday?.day === localDay() ? state.watchedToday.seconds : 0;
+  $("watched-today").textContent = `${formatDuration(watched)} watched today`;
+}
+
+// ---- Google ads on the current site ----------------------------------------------
+
+let currentSite = "";
+
+// The site in the active tab. The popup can read it because of the
+// "activeTab" permission. `?site=` lets tests open the popup as a normal page.
+async function findCurrentSite() {
+  const fromQuery = new URLSearchParams(location.search).get("site");
+  if (fromQuery) return siteOf(fromQuery);
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  try {
+    const url = new URL(tab?.url || "");
+    return url.protocol === "http:" || url.protocol === "https:" ? siteOf(url.hostname) : "";
+  } catch {
+    return "";
+  }
+}
+
+function renderSiteRow() {
+  const applies = currentSite && !YOUTUBE_SITES.includes(currentSite) && state.hideGoogleAds;
+  $("site-row").hidden = !applies;
+  if (!applies) return;
+  $("site-name").textContent = currentSite;
+  $("site-ads").checked = !isAllowed(currentSite, state.googleAdsAllowlist);
+}
+
+$("site-ads").addEventListener("change", (event) => {
+  const list = state.googleAdsAllowlist || [];
+  const allowlist = event.target.checked
+    ? list.filter((entry) => !isAllowed(currentSite, [entry]))
+    : [...new Set([...list, currentSite])];
+  save({ googleAdsAllowlist: allowlist });
+});
+
 // ---- Pause hiding -----------------------------------------------------------
 
-const pauseCopy = $("pause-hiding").closest(".row").querySelector("small");
+const pauseCopy = $("pause-hiding-desc");
 const PAUSE_COPY = pauseCopy.textContent;
 let pauseTick = 0;
 
@@ -83,49 +138,62 @@ function formatRemaining(ms) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
-function renderPause(endsAt) {
+function renderPause() {
   clearInterval(pauseTick);
-  const remaining = () => Math.max(0, Number(endsAt) - Date.now());
+  const remaining = () => Math.max(0, Number(state.pauseEndsAt) - Date.now());
   $("pause-hiding").checked = remaining() > 0;
-
   if (!remaining()) {
     pauseCopy.textContent = PAUSE_COPY;
-    if (Number(endsAt) > 0) save({ pauseHiding: false, pauseEndsAt: 0 });
     return;
   }
-
-  const paint = () => {
-    if (!remaining()) {
-      renderPause(endsAt);
-      return;
-    }
-    pauseCopy.textContent = `Showing everything · ${formatRemaining(remaining())} left`;
-  };
-  paint();
-  pauseTick = setInterval(paint, 1000);
+  // Update the countdown every second, but only announce it to screen readers once.
+  pauseCopy.textContent = `Showing everything · ${formatRemaining(remaining())} left`;
+  pauseCopy.setAttribute("aria-live", "off");
+  pauseTick = setInterval(() => {
+    if (!remaining()) renderPause();
+    else pauseCopy.textContent = `Showing everything · ${formatRemaining(remaining())} left`;
+  }, 1000);
 }
 
 $("pause-hiding").addEventListener("change", (event) => {
-  const endsAt = event.target.checked ? Date.now() + PAUSE_MS : 0;
-  save({ pauseHiding: event.target.checked, pauseEndsAt: endsAt });
-  renderPause(endsAt);
+  pauseCopy.setAttribute("aria-live", "polite");
+  save({ pauseHiding: event.target.checked, pauseEndsAt: event.target.checked ? Date.now() + PAUSE_MS : 0 });
 });
+
+// ---- Keyboard shortcuts --------------------------------------------------------
+
+async function renderShortcuts() {
+  const commands = await chrome.commands.getAll();
+  const keys = Object.fromEntries(commands.map((c) => [c.name, c.shortcut]));
+  $("shortcut-pause").textContent = keys["toggle-pause"] || "not set";
+  $("shortcut-focus").textContent = keys["toggle-focus-timer"] || "not set";
+}
+
+$("edit-shortcuts").addEventListener("click", () => chrome.tabs.create({ url: "chrome://extensions/shortcuts" }));
 
 // ---- Load and stay in sync ----------------------------------------------------
 
-chrome.storage.local.get(DEFAULTS).then((data) => {
-  renderTotal(data.skippedAds);
-  renderToday(data.skippedToday);
-  for (const [id, key] of Object.entries(SWITCHES)) $(id).checked = Boolean(data[key]);
-  $("dumb-youtube").checked = Boolean(data.dumbYoutube || data.hideSuggestions);
-  $("focus-timer").checked = Boolean(data.focusTimer);
-  $("focus-minutes").value = String(data.focusMinutes || DEFAULTS.focusMinutes);
-  renderPause(data.pauseEndsAt);
+function render() {
+  renderCounts();
+  renderSwitches();
+  renderWatched();
+  renderSiteRow();
+  renderPause();
+}
+
+Promise.all([load(), findCurrentSite()]).then(([data, site]) => {
+  Object.assign(state, data);
+  currentSite = site;
+  render();
 });
 
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local") return;
-  if (changes.skippedAds) renderTotal(changes.skippedAds.newValue);
-  if (changes.skippedToday) renderToday(changes.skippedToday.newValue);
-  if (changes.pauseEndsAt) renderPause(changes.pauseEndsAt.newValue);
+onChanged((values) => {
+  Object.assign(state, values);
+  renderCounts();
+  renderWatched();
+  renderSiteRow();
+  if ("pauseEndsAt" in values) renderPause();
+  if ("focusTimer" in values) $("focus-timer").checked = Boolean(state.focusTimer);
 });
+
+renderShortcuts();

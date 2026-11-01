@@ -1,7 +1,8 @@
 // "Focus timer": pause every video once the chosen number of minutes is up.
-// The popup stores the end time; this tab only waits for it.
+// The popup (or the keyboard shortcut) stores the end time; this tab only
+// waits for it.
 (() => {
-  const { register, settings, save } = DumbTube;
+  const { register, settings, save, showNote, hideNote, pauseAllVideos } = DumbTube;
 
   const NOTE_ID = "focus-timer-note";
   let timerId = 0;
@@ -15,35 +16,18 @@
     return Boolean(end) && Date.now() >= end;
   }
 
-  function showNote() {
-    if (document.getElementById(NOTE_ID)) return;
-    const note = document.createElement("p");
-    note.id = NOTE_ID;
-    note.textContent = "Focus time is up. Playback is paused.";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "Keep watching";
-    button.addEventListener("click", () => save({ focusTimer: false, focusEndsAt: 0 }));
-    note.appendChild(button);
-    document.documentElement.appendChild(note);
-  }
-
-  function hideNote() {
-    document.getElementById(NOTE_ID)?.remove();
-  }
-
   function pauseIfTimeIsUp() {
     if (!timeIsUp()) return;
-    for (const video of document.querySelectorAll("video")) {
-      if (!video.paused) video.pause();
-    }
-    showNote();
+    pauseAllVideos();
+    showNote(NOTE_ID, "Focus time is up. Playback is paused.", "Keep watching", () =>
+      save({ focusTimer: false, focusEndsAt: 0 })
+    );
   }
 
   function schedule() {
     clearTimeout(timerId);
     const end = endsAt();
-    if (!end || Date.now() < end) hideNote();
+    if (!end || Date.now() < end) hideNote(NOTE_ID);
     if (!end) return;
     if (Date.now() >= end) pauseIfTimeIsUp();
     else timerId = setTimeout(pauseIfTimeIsUp, end - Date.now());

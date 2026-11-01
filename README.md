@@ -16,10 +16,25 @@
 | **Hide the sidebar** | Off | Hides the left-hand menu, leaving search as the way around. |
 | **Open on search** | Off | Puts the cursor in the search box on the home page. |
 | **Focus timer** | Off | Pauses playback after the chosen number of minutes (5–180). |
+| **Daily limit** | Off | Pauses YouTube once you've watched the chosen number of minutes today (5–600), counted across all tabs. Ads and hover previews don't count. "Keep watching today" lifts it until midnight. |
 | **Hide Google ads** | On | Hides AdSense and Google Ad Manager ads on other websites. |
+| **On *this site*** | On | Shown for the site in the current tab. Turn it off to leave Google ads alone on that site, for example when hiding them breaks its layout. |
 | **Pause hiding** | — | Shows everything again for 10 minutes. |
 
-The popup also shows how many ads were skipped in total and today. The total also appears on the toolbar icon.
+The popup also shows how many ads were skipped (in total, today, and split into sponsored cards, video ads and Google ads) and how long you've watched YouTube today. The total also appears on the toolbar icon, which shows **II** while hiding is paused. The popup follows your system's light or dark theme.
+
+### Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> (<kbd>⌥⇧P</kbd> on Mac) | Pause hiding for 10 minutes, or resume |
+| <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> (<kbd>⌥⇧F</kbd> on Mac) | Start or stop the focus timer |
+
+Change them at `chrome://extensions/shortcuts`, or with **Change** at the bottom of the popup.
+
+### Sync
+
+Switches, minutes and the list of sites where ads are allowed sync to every computer signed in to Chrome. Counters, watch time and running timers stay on each computer. The first time 1.4.0 runs, it copies your existing settings into sync, unless another computer already synced its own.
 
 On **YouTube Music**, only *Skip video ads* runs. The other switches are for regular YouTube's page layout. YouTube Studio is left alone.
 
@@ -39,8 +54,8 @@ After a run of video ads, YouTube sometimes shows a still card with a picture an
 manifest.json
 icons/                 toolbar and store icons
 src/
-  background.js        ad counters and the toolbar badge
-  shared/settings.js   every setting and its default (used everywhere)
+  background.js        counters, watch time, badge, shortcuts, moving settings to sync
+  shared/settings.js   every setting, its default, and whether it syncs (used everywhere)
   popup/               the toolbar popup
   youtube/             runs on www.youtube.com and music.youtube.com
     core.js            shared helpers and the feature registry
@@ -49,6 +64,7 @@ src/
     playables.js       Hide Playables
     page-layout.js     Dumb YouTube, comments, sidebar, Open on search
     focus-timer.js     Focus timer
+    daily-limit.js     Daily limit
     video-ads.js       Skip video ads
     autoplay.js        Block autoplay
     main.js            loads settings and runs the features (loaded last)
@@ -59,7 +75,19 @@ src/
 tests/                 browser tests (not part of the extension)
 ```
 
+Always read and write settings through `DumbTubeSettings.load/save/onChanged`, which put each key in the right storage area.
+
 Each YouTube feature registers itself with `DumbTube.register({ run, ... })` in `core.js`. `main.js` re-runs every feature when a setting or the page changes. To add a feature, add its setting to `src/shared/settings.js`, create a file in `src/youtube/`, list it in `manifest.json` before `main.js`, and add its switch to the popup.
+
+### Permissions
+
+| Permission | Why |
+|---|---|
+| `storage` | Saving settings and counters |
+| `alarms` | Updating the toolbar icon when a pause ends |
+| `activeTab` | Reading the current tab's address when you open the popup, for the per-site Google ads switch |
+
+Nothing is sent anywhere: all data stays in Chrome's own storage.
 
 ## Tests
 

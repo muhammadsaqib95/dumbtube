@@ -110,7 +110,7 @@
       card.dataset.skippedAd = "1";
       newlyHidden += 1;
     }
-    if (newlyHidden > 0) sendSkipped(newlyHidden);
+    if (newlyHidden > 0) sendSkipped(newlyHidden, "sponsored");
   }
 
   register({
