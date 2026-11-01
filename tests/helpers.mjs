@@ -62,6 +62,14 @@ export async function launch({ settings = {}, viewport = { width: 1280, height: 
   });
   const sw = ctx.serviceWorkers()[0] || (await ctx.waitForEvent("serviceworker"));
   const extensionId = new URL(sw.url()).host;
+  // Playwright can hand over the worker before its script has run (seen on
+  // slower CI machines). Wait until background.js has loaded settings.js.
+  for (let i = 0; ; i += 1) {
+    const ready = await sw.evaluate(() => typeof DumbTubeSettings !== "undefined").catch(() => false);
+    if (ready) break;
+    if (i >= 100) throw new Error("The extension's service worker never finished starting");
+    await wait(100);
+  }
   // Go through the extension's own settings layer so each key lands in the
   // right storage area (sync or local).
   const store = (values) => sw.evaluate((v) => DumbTubeSettings.save(v), values);
