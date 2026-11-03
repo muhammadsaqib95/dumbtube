@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DumbTube",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Search, watch, skip the rest. Hides YouTube Shorts, feeds and sponsored cards, skips video ads, and hides Google ads on other sites.",
   "icons": {
     "16": "icons/dumbtube-16x16.png",
@@ -52,6 +52,7 @@
     },
     {
       "matches": ["http://*/*", "https://*/*"],
+      "exclude_matches": ["*://*.youtube.com/*"],
       "js": ["src/shared/settings.js", "src/sites/google-ads.js"],
       "css": ["src/sites/google-ads.css"],
       "run_at": "document_start",

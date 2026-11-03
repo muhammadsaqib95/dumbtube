@@ -4,7 +4,8 @@
 import { launch, check, skip, section, finish, wait } from "./helpers.mjs";
 
 const SHORT_VIDEO = "https://www.youtube.com/watch?v=jNQXAC9IVRw"; // 19 seconds
-const MAX_VIDEO_AD_MS = 3000;
+// Ads play through at 16x, so a 2-minute ad takes about 8 seconds.
+const MAX_VIDEO_AD_MS = 8000;
 
 // ---------------------------------------------------------------------------
 section("Sponsored cards in real search results");

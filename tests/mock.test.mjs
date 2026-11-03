@@ -75,8 +75,10 @@ const visible = (page, selector) =>
 const video = (page) =>
   page.evaluate(() => {
     const v = document.querySelector("#movie_player video");
-    return { muted: v.muted, t: v.currentTime, d: v.duration };
+    return { muted: v.muted, t: v.currentTime, d: v.duration, rate: v.playbackRate, ended: v.ended };
   });
+
+const playAd = (page) => page.evaluate(() => document.querySelector("#movie_player video").play());
 
 const setAd = (page, on, src) =>
   page.evaluate(([on, src]) => {
@@ -96,11 +98,18 @@ section("Skip video ads, block autoplay, pause");
   await serveFakes(ctx);
   const page = await ctx.newPage();
   await page.goto("https://www.youtube.com/watch?v=mock");
-  await wait(1500);
+  await playAd(page);
+  await wait(600);
 
   let v = await video(page);
   check("ad is muted", v.muted);
-  check("ad jumped to its end", v.t > v.d - 1, `t=${v.t.toFixed(1)} of ${v.d}`);
+  check("ad plays at 16x", v.rate === 16, `rate=${v.rate}`);
+  check("ad is not jumped to its end", v.t < v.d - 5, `t=${v.t.toFixed(1)} of ${v.d}`);
+  await page.evaluate(() => (document.querySelector("#movie_player video").playbackRate = 1));
+  await wait(400);
+  check("speed is set again if YouTube resets it", (await video(page)).rate === 16);
+  v = await waitFor(() => video(page), (x) => x.ended, 5000);
+  check("a 30-second ad plays to its end in about 2 seconds", v.ended, `t=${v.t.toFixed(1)} of ${v.d}`);
   check("ad picture is hidden", !(await visible(page, "#movie_player video")));
   check("banner over the video is hidden", !(await visible(page, ".ytp-ad-overlay-container")));
   check("end-of-break card is hidden", !(await visible(page, ".ad-card")));
@@ -115,6 +124,7 @@ section("Skip video ads, block autoplay, pause");
   await wait(1000);
   v = await video(page);
   check("sound comes back after the ad", !v.muted);
+  check("speed comes back after the ad", v.rate === 1, `rate=${v.rate}`);
   check("main video is not moved", v.t < 1, `t=${v.t.toFixed(1)}`);
 
   await setAd(page, true, "/ad2.wav");
@@ -131,8 +141,13 @@ section("Skip video ads, block autoplay, pause");
   await setAd(page, true, "/ad3.wav");
   await wait(1200);
   await setAd(page, false, "/content3.wav");
+  // YouTube puts back the viewer's chosen speed when the video loads.
+  await page.evaluate(() => (document.querySelector("#movie_player video").playbackRate = 1.5));
   await wait(800);
-  check("a video you muted stays muted after the ad", (await video(page)).muted);
+  v = await video(page);
+  check("a video you muted stays muted after the ad", v.muted);
+  check("the speed YouTube sets after the ad is left alone", v.rate === 1.5, `rate=${v.rate}`);
+  await page.evaluate(() => (document.querySelector("#movie_player video").playbackRate = 1));
 
   await page.evaluate(() => (document.querySelector("#movie_player video").muted = false));
   await store({ pauseEndsAt: Date.now() + 60000 });
@@ -140,7 +155,7 @@ section("Skip video ads, block autoplay, pause");
   await setAd(page, true, "/ad4.wav");
   await wait(1500);
   v = await video(page);
-  check("Pause hiding: ad plays normally", v.t < 1 && !v.muted, `t=${v.t.toFixed(1)} muted=${v.muted}`);
+  check("Pause hiding: ad plays normally", v.rate === 1 && !v.muted, `rate=${v.rate} muted=${v.muted}`);
   check("Pause hiding: banner shows", await visible(page, ".ytp-ad-overlay-container"));
 
   // Turning Block autoplay off puts YouTube's Autoplay back on.
@@ -152,7 +167,7 @@ section("Skip video ads, block autoplay, pause");
   await page.evaluate(() => (document.querySelector("#movie_player video").src = "/ad5.wav"));
   await wait(1500);
   v = await video(page);
-  check("switched off: ad not skipped", v.t < 1 && !v.muted);
+  check("switched off: ad not skipped", v.rate === 1 && !v.muted, `rate=${v.rate} muted=${v.muted}`);
 
   // If Autoplay was already off, turning the switch on and off leaves it off.
   await page.evaluate(() => document.querySelector(".ytp-autonav-toggle-button").setAttribute("aria-checked", "false"));
@@ -210,12 +225,13 @@ section("YouTube Music and other YouTube sites");
   check("Music: YouTube page features stay off", !/dumb-youtube|hide-shorts|hide-sidebar/.test(music.classes), music.classes);
   check("Music: no 'Search for a topic' message", !music.note);
   const v = await video(page);
-  check("Music: video ads are still skipped", v.t > v.d - 1 && v.muted, `t=${v.t.toFixed(1)} of ${v.d}`);
+  check("Music: video ads are still skipped", v.rate === 16 && v.muted, `rate=${v.rate} muted=${v.muted}`);
 
   await page.goto("https://studio.youtube.com/");
   await wait(800);
   const studio = await page.evaluate(() => document.documentElement.className);
   check("YouTube Studio is left alone", !/hide-shorts|dumb-youtube/.test(studio), studio);
+  check("Hide Google ads doesn't run on YouTube", !/hide-google-ads/.test(studio) && !/hide-google-ads/.test(music.classes), `${music.classes} | ${studio}`);
   await ctx.close();
 }
 
