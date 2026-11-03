@@ -1,26 +1,31 @@
 // "Skip video ads": ads that play in the video player.
 //
 // YouTube ignores clicks on its Skip button unless they come from a real
-// mouse, so ads are skipped by jumping to their end instead. The ad is muted
-// and hidden meanwhile (see youtube.css), and the sound comes back afterwards.
-// Every player on the page is checked: YouTube keeps hidden preview players
-// around, and the ad may be in any of them.
+// mouse. Jumping to the end of the ad works, but YouTube notices that the ad
+// never really played and shows its "Ad blockers are not allowed" warning.
+// So ads are played through at the fastest speed the browser allows instead,
+// muted and hidden meanwhile (see youtube.css). Sound and speed come back
+// afterwards. Every player on the page is checked: YouTube keeps hidden
+// preview players around, and the ad may be in any of them.
 (() => {
   const { register, settings, active, setPageClass, sendSkipped, onStop, extensionAlive } = DumbTube;
 
   const POLL_MS = 300;
-  const RETRY_MS = 1000;
+  // Chrome refuses playback rates above 16.
+  const AD_RATE = 16;
 
   const mutedByUs = new WeakSet();
+  const rateBefore = new WeakMap();
   const countedSrc = new WeakMap();
-  const jumpedAt = new WeakMap();
   let pollTimer = 0;
 
   function adFinished(video) {
     if (mutedByUs.has(video)) video.muted = false;
     mutedByUs.delete(video);
+    // Put back the speed the viewer chose, unless YouTube already set one.
+    if (rateBefore.has(video) && video.playbackRate === AD_RATE) video.playbackRate = rateBefore.get(video);
+    rateBefore.delete(video);
     countedSrc.delete(video);
-    jumpedAt.delete(video);
   }
 
   function skipAd(video) {
@@ -29,28 +34,19 @@
       mutedByUs.add(video);
     }
 
-    // Jumping before the ad has loaded stalls for seconds; the loadedmetadata
-    // event brings us back here once it has.
-    const { duration, currentTime } = video;
-    if (video.readyState < HTMLMediaElement.HAVE_METADATA || !Number.isFinite(duration) || duration <= 0) return;
+    // YouTube sets the speed back when each ad loads, so set it every time.
+    if (video.playbackRate !== AD_RATE) {
+      if (!rateBefore.has(video)) rateBefore.set(video, video.playbackRate);
+      video.playbackRate = AD_RATE;
+    }
 
     // A new src is a new ad (YouTube plays several in a row). Only trust
     // currentSrc once the ad has loaded: right after the src changes it can
     // still name the previous video, which would count one ad twice.
+    if (video.readyState < HTMLMediaElement.HAVE_METADATA) return;
     if (video.currentSrc && countedSrc.get(video) !== video.currentSrc) {
       countedSrc.set(video, video.currentSrc);
-      jumpedAt.delete(video);
       sendSkipped(1, "video");
-    }
-
-    if (currentTime < duration - 0.1) {
-      video.currentTime = duration - 0.1;
-      jumpedAt.set(video, Date.now());
-    } else if (Date.now() - (jumpedAt.get(video) || 0) > RETRY_MS) {
-      // Jumped already but the ad hasn't ended: nudge it the rest of the way.
-      video.currentTime = duration;
-      jumpedAt.set(video, Date.now());
-      video.play().catch(() => {});
     }
   }
 
@@ -60,8 +56,8 @@
     for (const player of document.querySelectorAll(".html5-video-player")) {
       const video = player.querySelector("video");
       if (!video) continue;
-      if (!player.classList.contains("ad-showing")) adFinished(video);
-      else if (on) skipAd(video);
+      if (!on || !player.classList.contains("ad-showing")) adFinished(video);
+      else skipAd(video);
     }
   }
 
@@ -85,8 +81,9 @@
     onMusic: true,
     run,
     start() {
-      // React the moment an ad loads instead of waiting for the next poll.
-      for (const type of ["loadedmetadata", "durationchange", "playing", "timeupdate"]) {
+      // React the moment an ad loads or its speed is reset, instead of
+      // waiting for the next poll.
+      for (const type of ["loadedmetadata", "durationchange", "playing", "ratechange"]) {
         document.addEventListener(
           type,
           (event) => {

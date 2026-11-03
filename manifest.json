@@ -52,6 +52,7 @@
     },
     {
       "matches": ["http://*/*", "https://*/*"],
+      "exclude_matches": ["*://*.youtube.com/*"],
       "js": ["src/shared/settings.js", "src/sites/google-ads.js"],
       "css": ["src/sites/google-ads.css"],
       "run_at": "document_start",

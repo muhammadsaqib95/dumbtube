@@ -12,7 +12,7 @@
 | **Hide Shorts** | On | Hides Shorts shelves, Shorts in feeds and search, and the Shorts tab. |
 | **Hide Playables** | On | Hides the YouTube Playables game shelf. |
 | **Hide sponsored cards** | On | Hides ads in the feed, search results and sidebar. |
-| **Skip video ads** | Off | Mutes and skips ads in the player, and hides them while they're skipped. |
+| **Skip video ads** | Off | Mutes and hides ads in the player and plays them through at 16× speed, so a 30-second ad is over in about 2 seconds. (Jumping straight to the end makes YouTube show its "Ad blockers are not allowed" warning.) |
 | **Block autoplay** | Off | Turns off YouTube's Autoplay and cancels the "Up next" countdown. Turning this switch off restores Autoplay if the extension was the one that turned it off. |
 | **Hide comments** | Off | Hides comments under videos and on Shorts. |
 | **Hide the sidebar** | Off | Hides the left-hand menu, leaving search as the way around. |
