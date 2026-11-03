@@ -1,6 +1,6 @@
 # DumbTube
 
-[![Checks](https://github.com/muhammadsaqib95/hide-youtube-shorts/actions/workflows/checks.yml/badge.svg)](https://github.com/muhammadsaqib95/hide-youtube-shorts/actions/workflows/checks.yml)
+[![Checks](https://github.com/muhammadsaqib95/dumbtube/actions/workflows/checks.yml/badge.svg)](https://github.com/muhammadsaqib95/dumbtube/actions/workflows/checks.yml)
 
 **Search, watch, skip the rest.** A Chrome extension that strips YouTube back to search and the video you chose. It hides Shorts, feeds, sponsored cards and video ads, and Google display ads on other sites.
 
